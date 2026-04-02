@@ -44,7 +44,7 @@ model User {
   id           String          @id @default(cuid())
   email        String          @unique
   passwordHash String
-  secondaryEmail String?       @unique
+  secondaryEmail String?
   secondaryPasswordHash String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt

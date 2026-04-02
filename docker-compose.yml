@@ -34,9 +34,10 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/budgeting_app?schema=public
       NODE_ENV: production
+      RUN_DB_SEED_ON_STARTUP: "true"
     ports:
       - "3000:3000"
-    command: sh -c "npm run db:push && npm run db:seed && npm run start"
+    command: sh ./scripts/startup.sh
     networks:
       - network
 
@@ -56,6 +57,7 @@ services:
       NODE_ENV: development
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
+      RUN_DB_SEED_ON_STARTUP: "true"
     ports:
       - "3000:3000"
     volumes:

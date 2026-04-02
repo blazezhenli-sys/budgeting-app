@@ -5,6 +5,10 @@
 - Build from this repository using `Dockerfile`.
 - Expose port `3000`.
 - Set environment variables from `.env.example`.
+- Container startup now runs DB prep automatically via `scripts/startup.sh`:
+  - `prisma migrate deploy` when migration files exist
+  - otherwise `prisma db push`
+  - optional seeding controlled by `RUN_DB_SEED_ON_STARTUP` (default `true`)
 
 2. **Database service**
 - Use Postgres 16.
@@ -14,11 +18,4 @@
 ## First deploy steps
 1. Deploy DB.
 2. Deploy app.
-3. Run migrations:
-```bash
-npm run db:push
-```
-4. Seed initial user:
-```bash
-npm run db:seed
-```
+3. App startup handles schema prep and seed automatically.
