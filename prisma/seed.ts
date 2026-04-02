@@ -19,19 +19,37 @@ async function hashPassword(password: string): Promise<string> {
 async function main() {
   const email = process.env.APP_USER_EMAIL;
   const password = process.env.APP_USER_PASSWORD;
+  const secondaryEmail = process.env.APP_USER_EMAIL_2?.trim().toLowerCase() || null;
+  const secondaryPassword = process.env.APP_USER_PASSWORD_2 || null;
 
   if (!email || !password) {
     throw new Error("APP_USER_EMAIL and APP_USER_PASSWORD must be set before seeding");
   }
+  if ((secondaryEmail && !secondaryPassword) || (!secondaryEmail && secondaryPassword)) {
+    throw new Error("Set both APP_USER_EMAIL_2 and APP_USER_PASSWORD_2, or neither.");
+  }
+  if (secondaryEmail && secondaryEmail === email.toLowerCase()) {
+    throw new Error("APP_USER_EMAIL_2 must be different from APP_USER_EMAIL.");
+  }
+
+  const secondaryPasswordHash = secondaryPassword ? await hashPassword(secondaryPassword) : null;
 
   const user = await prisma.user.upsert({
     where: { email },
     update: {
       passwordHash: await hashPassword(password),
+      ...(secondaryEmail
+        ? {
+            secondaryEmail,
+            secondaryPasswordHash,
+          }
+        : {}),
     },
     create: {
       email,
       passwordHash: await hashPassword(password),
+      secondaryEmail,
+      secondaryPasswordHash,
       settings: {
         create: {
           currency: normalizeDisplayCurrency(process.env.APP_CURRENCY),

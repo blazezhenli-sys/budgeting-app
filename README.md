@@ -73,6 +73,7 @@ npm run dev
 ```
 
 Log in with `APP_USER_EMAIL` / `APP_USER_PASSWORD`.
+Optional: set `APP_USER_EMAIL_2` / `APP_USER_PASSWORD_2` for a second login to the same account.
 
 ## CSV import template
 Required CSV columns:

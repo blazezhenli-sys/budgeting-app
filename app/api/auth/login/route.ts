@@ -10,12 +10,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { email: payload.data.email } });
+  const requestedEmail = payload.data.email.trim().toLowerCase();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ email: requestedEmail }, { secondaryEmail: requestedEmail }],
+    },
+  });
   if (!user) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const validPassword = await verifyPassword(payload.data.password, user.passwordHash);
+  const primaryEmail = user.email.toLowerCase();
+  const secondaryEmail = user.secondaryEmail?.toLowerCase() ?? null;
+
+  const passwordHash =
+    requestedEmail === primaryEmail
+      ? user.passwordHash
+      : requestedEmail === secondaryEmail
+        ? user.secondaryPasswordHash
+        : null;
+
+  if (!passwordHash) {
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
+
+  const validPassword = await verifyPassword(payload.data.password, passwordHash);
   if (!validPassword) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
