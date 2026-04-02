@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { todayInTimeZone } from "@/lib/date";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { ensureSettings } from "@/lib/server/settings";
+import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 export default async function CapturePage() {
   const user = await requireSessionUser();
@@ -22,6 +22,7 @@ export default async function CapturePage() {
   ]);
   const inflowCategory = categories.find((category) => category.specialType === "INFLOW");
   const initialDate = todayInTimeZone(settings.timezone);
+  const usdRateMap = usdRateMapFromSettings(settings);
 
   return (
     <div className="grid">
@@ -33,6 +34,7 @@ export default async function CapturePage() {
         inflowCategoryId={inflowCategory?.id ?? null}
         inflowCategoryName={inflowCategory?.name ?? "Inflow: Ready to Assign"}
         initialDate={initialDate}
+        usdRateMap={usdRateMap}
       />
     </div>
   );

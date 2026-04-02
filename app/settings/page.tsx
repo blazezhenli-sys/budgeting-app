@@ -4,7 +4,7 @@ import { todayInTimeZone } from "@/lib/date";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
 import { listRecurringQueue } from "@/lib/server/recurring";
-import { ensureSettings } from "@/lib/server/settings";
+import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 export default async function SettingsPage() {
   const user = await requireSessionUser();
@@ -22,6 +22,7 @@ export default async function SettingsPage() {
     listRecurringQueue(user.id),
   ]);
   const initialRuleDate = todayInTimeZone(settings.timezone);
+  const usdRateMap = usdRateMapFromSettings(settings);
 
   return (
     <div className="grid">
@@ -33,6 +34,7 @@ export default async function SettingsPage() {
         categories={categories}
         initialQueue={queue}
         initialRuleDate={initialRuleDate}
+        usdRateMap={usdRateMap}
       />
     </div>
   );

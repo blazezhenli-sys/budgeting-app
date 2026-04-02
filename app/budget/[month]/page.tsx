@@ -9,7 +9,7 @@ import { isMonthKey } from "@/lib/month";
 import { requireSessionUser } from "@/lib/server/auth";
 import { getBudgetMonthView } from "@/lib/server/budget";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { ensureSettings } from "@/lib/server/settings";
+import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 function adjacentMonth(month: string, offset: number): string {
   const parsed = parse(`${month}-01`, "yyyy-MM-dd", new Date());
@@ -35,6 +35,7 @@ export default async function BudgetMonthPage({ params }: { params: Promise<{ mo
   ]);
   const inflowCategory = categories.find((category) => category.specialType === "INFLOW");
   const initialQuickDate = todayInTimeZone(settings.timezone);
+  const usdRateMap = usdRateMapFromSettings(settings);
 
   const prev = adjacentMonth(month, -1);
   const next = adjacentMonth(month, 1);
@@ -55,6 +56,7 @@ export default async function BudgetMonthPage({ params }: { params: Promise<{ mo
       <BudgetBoard
         month={month}
         currency={settings.currency}
+        usdRateMap={usdRateMap}
         initialBudget={budget}
         accounts={accounts}
         categories={categories}

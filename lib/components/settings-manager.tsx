@@ -9,6 +9,7 @@ import {
   formatUsdMoney,
   normalizeDisplayCurrency,
   parseDisplayAmountToUsdCents,
+  type UsdRateMap,
 } from "@/lib/money";
 
 type RuleWithRefs = RecurringRule & {
@@ -33,6 +34,7 @@ type Props = {
   categories: Category[];
   initialQueue: QueueItem[];
   initialRuleDate: string;
+  usdRateMap: UsdRateMap;
 };
 
 function formatDateOnly(value: Date | string): string {
@@ -43,7 +45,15 @@ function formatDateOnly(value: Date | string): string {
   return parsed.toISOString().slice(0, 10);
 }
 
-export function SettingsManager({ initialSettings, rules, accounts, categories, initialQueue, initialRuleDate }: Props) {
+export function SettingsManager({
+  initialSettings,
+  rules,
+  accounts,
+  categories,
+  initialQueue,
+  initialRuleDate,
+  usdRateMap,
+}: Props) {
   const [currency, setCurrency] = useState(normalizeDisplayCurrency(initialSettings.currency));
   const [timezone, setTimezone] = useState(initialSettings.timezone);
   const [monthStartDay, setMonthStartDay] = useState(String(initialSettings.monthStartDay));
@@ -97,7 +107,7 @@ export function SettingsManager({ initialSettings, rules, accounts, categories, 
         categoryId: ruleCategoryId,
         payee: rulePayee,
         memo: ruleMemo,
-        amount: parseDisplayAmountToUsdCents(ruleAmount, currency),
+        amount: parseDisplayAmountToUsdCents(ruleAmount, currency, usdRateMap),
         frequency: ruleFrequency,
         nextRunDate: ruleNextDate,
       }),
@@ -268,7 +278,7 @@ export function SettingsManager({ initialSettings, rules, accounts, categories, 
                   <td>{rule.payee}</td>
                   <td>{rule.account.name}</td>
                   <td>{rule.category?.name ?? "Inflow"}</td>
-                  <td>{formatUsdMoney(rule.amount, currency)}</td>
+                  <td>{formatUsdMoney(rule.amount, currency, usdRateMap)}</td>
                   <td>{rule.frequency}</td>
                   <td>{formatDateOnly(rule.nextRunDate)}</td>
                   <td>{rule.active ? "Active" : "Paused"}</td>
@@ -313,7 +323,7 @@ export function SettingsManager({ initialSettings, rules, accounts, categories, 
                     <td>{item.payee}</td>
                     <td>{item.account.name}</td>
                     <td>{item.category?.name ?? "Inflow"}</td>
-                    <td>{formatUsdMoney(item.amount, currency)}</td>
+                    <td>{formatUsdMoney(item.amount, currency, usdRateMap)}</td>
                   </tr>
                 ))}
               </tbody>

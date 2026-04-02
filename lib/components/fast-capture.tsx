@@ -4,7 +4,7 @@ import type { Account, Category } from "@prisma/client";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { parseDisplayAmountToUsdCents } from "@/lib/money";
+import { parseDisplayAmountToUsdCents, type UsdRateMap } from "@/lib/money";
 
 type Props = {
   currency: string;
@@ -13,6 +13,7 @@ type Props = {
   inflowCategoryId: string | null;
   inflowCategoryName: string;
   initialDate: string;
+  usdRateMap: UsdRateMap;
 };
 
 export function FastCapture({
@@ -22,6 +23,7 @@ export function FastCapture({
   inflowCategoryId,
   inflowCategoryName,
   initialDate,
+  usdRateMap,
 }: Props) {
   const router = useRouter();
   const spendCategories = categories.filter((category) => category.specialType !== "INFLOW");
@@ -41,7 +43,7 @@ export function FastCapture({
 
     let parsedAmount = 0;
     try {
-      parsedAmount = Math.abs(parseDisplayAmountToUsdCents(amount, currency));
+      parsedAmount = Math.abs(parseDisplayAmountToUsdCents(amount, currency, usdRateMap));
     } catch {
       setError("Amount must be a valid number.");
       return;

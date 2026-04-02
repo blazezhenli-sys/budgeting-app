@@ -65,6 +65,8 @@ model Setting {
   currency      String   @default("USD")
   timezone      String   @default("UTC")
   monthStartDay Int      @default(1)
+  usdRates      Json?
+  usdRatesFetchedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -2,7 +2,7 @@ import { CategoriesManager } from "@/lib/components/categories-manager";
 import { prisma } from "@/lib/db";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { ensureSettings } from "@/lib/server/settings";
+import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 export default async function CategoriesPage() {
   const user = await requireSessionUser();
@@ -19,11 +19,17 @@ export default async function CategoriesPage() {
     }),
     ensureSettings(user.id),
   ]);
+  const usdRateMap = usdRateMapFromSettings(settings);
 
   return (
     <div className="grid">
       <h1>Categories</h1>
-      <CategoriesManager initialGroups={groups} initialCategories={categories} currency={settings.currency} />
+      <CategoriesManager
+        initialGroups={groups}
+        initialCategories={categories}
+        currency={settings.currency}
+        usdRateMap={usdRateMap}
+      />
     </div>
   );
 }

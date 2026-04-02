@@ -3,15 +3,16 @@
 import { Category, CategoryGroup } from "@prisma/client";
 import { FormEvent, useMemo, useState } from "react";
 
-import { parseDisplayAmountToUsdCents, usdCentsToDisplayInput } from "@/lib/money";
+import { parseDisplayAmountToUsdCents, type UsdRateMap, usdCentsToDisplayInput } from "@/lib/money";
 
 type Props = {
   initialGroups: CategoryGroup[];
   initialCategories: Category[];
   currency: string;
+  usdRateMap: UsdRateMap;
 };
 
-export function CategoriesManager({ initialGroups, initialCategories, currency }: Props) {
+export function CategoriesManager({ initialGroups, initialCategories, currency, usdRateMap }: Props) {
   const [groups, setGroups] = useState(initialGroups);
   const [categories, setCategories] = useState(initialCategories);
   const [groupName, setGroupName] = useState("");
@@ -22,7 +23,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
     Object.fromEntries(
       initialCategories.map((category) => [
         category.id,
-        category.targetMonthly === null ? "" : usdCentsToDisplayInput(category.targetMonthly, currency),
+        category.targetMonthly === null ? "" : usdCentsToDisplayInput(category.targetMonthly, currency, usdRateMap),
       ]),
     ),
   );
@@ -67,7 +68,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
     let targetMonthly: number | null = null;
     if (categoryTarget.trim()) {
       try {
-        targetMonthly = parseDisplayAmountToUsdCents(categoryTarget, currency);
+        targetMonthly = parseDisplayAmountToUsdCents(categoryTarget, currency, usdRateMap);
       } catch {
         setError("Target amount must be a valid number.");
         return;
@@ -96,7 +97,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
       [payload.category.id]:
         payload.category.targetMonthly === null
           ? ""
-          : usdCentsToDisplayInput(payload.category.targetMonthly, currency),
+          : usdCentsToDisplayInput(payload.category.targetMonthly, currency, usdRateMap),
     }));
     setCategoryName("");
     setCategoryTarget("");
@@ -124,7 +125,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
     let targetMonthly: number | null = null;
     if (draft.trim()) {
       try {
-        targetMonthly = parseDisplayAmountToUsdCents(draft, currency);
+        targetMonthly = parseDisplayAmountToUsdCents(draft, currency, usdRateMap);
       } catch {
         setError("Target amount must be a valid number.");
         return;
@@ -151,7 +152,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
       [category.id]:
         payload.category.targetMonthly === null
           ? ""
-          : usdCentsToDisplayInput(payload.category.targetMonthly, currency),
+          : usdCentsToDisplayInput(payload.category.targetMonthly, currency, usdRateMap),
     }));
   }
 

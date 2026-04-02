@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { todayInTimeZone } from "@/lib/date";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { ensureSettings } from "@/lib/server/settings";
+import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 export default async function AccountsPage() {
   const user = await requireSessionUser();
@@ -38,6 +38,7 @@ export default async function AccountsPage() {
     accounts.map((account) => [account.id, account.openingBalance + (sumsByAccount.get(account.id) ?? 0)]),
   );
   const initialDate = todayInTimeZone(settings.timezone);
+  const usdRateMap = usdRateMapFromSettings(settings);
 
   return (
     <div className="grid">
@@ -47,6 +48,7 @@ export default async function AccountsPage() {
         initialBalances={balances}
         categories={categories}
         currency={settings.currency}
+        usdRateMap={usdRateMap}
         initialReconcileDate={initialDate}
       />
     </div>

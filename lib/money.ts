@@ -1,7 +1,9 @@
 export const DISPLAY_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "TWD"] as const;
 export type DisplayCurrency = (typeof DISPLAY_CURRENCIES)[number];
 
-const USD_TO_DISPLAY_RATE: Record<DisplayCurrency, number> = {
+export type UsdRateMap = Record<DisplayCurrency, number>;
+
+export const DEFAULT_USD_TO_DISPLAY_RATE: UsdRateMap = {
   USD: 1,
   EUR: 0.92,
   GBP: 0.79,
@@ -37,34 +39,56 @@ export function normalizeDisplayCurrency(currency: string | null | undefined): D
   return DISPLAY_CURRENCIES.includes(normalized) ? normalized : "USD";
 }
 
-export function usdCentsToDisplayCents(usdCents: number, currency: string): number {
+export function normalizeUsdRateMap(input?: Partial<Record<string, number>> | null): UsdRateMap {
+  const next: UsdRateMap = { ...DEFAULT_USD_TO_DISPLAY_RATE };
+  if (!input || typeof input !== "object") {
+    return next;
+  }
+
+  for (const currency of DISPLAY_CURRENCIES) {
+    const candidate = input[currency];
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      next[currency] = candidate;
+    }
+  }
+
+  next.USD = 1;
+  return next;
+}
+
+function getRateMap(rateMap?: UsdRateMap): UsdRateMap {
+  return rateMap ?? DEFAULT_USD_TO_DISPLAY_RATE;
+}
+
+export function usdCentsToDisplayCents(usdCents: number, currency: string, rateMap?: UsdRateMap): number {
   const normalized = normalizeDisplayCurrency(currency);
-  return Math.round(usdCents * USD_TO_DISPLAY_RATE[normalized]);
+  return Math.round(usdCents * getRateMap(rateMap)[normalized]);
 }
 
-export function displayCentsToUsdCents(displayCents: number, currency: string): number {
+export function displayCentsToUsdCents(displayCents: number, currency: string, rateMap?: UsdRateMap): number {
   const normalized = normalizeDisplayCurrency(currency);
-  return Math.round(displayCents / USD_TO_DISPLAY_RATE[normalized]);
+  return Math.round(displayCents / getRateMap(rateMap)[normalized]);
 }
 
-export function parseDisplayAmountToUsdCents(value: string | number, currency: string): number {
-  return displayCentsToUsdCents(toCents(value), currency);
+export function parseDisplayAmountToUsdCents(value: string | number, currency: string, rateMap?: UsdRateMap): number {
+  return displayCentsToUsdCents(toCents(value), currency, rateMap);
 }
 
-export function usdCentsToDisplayInput(usdCents: number, currency: string): string {
-  return fromCents(usdCentsToDisplayCents(usdCents, currency));
+export function usdCentsToDisplayInput(usdCents: number, currency: string, rateMap?: UsdRateMap): string {
+  return fromCents(usdCentsToDisplayCents(usdCents, currency, rateMap));
 }
 
-export function formatUsdMoney(usdCents: number, currency = "USD"): string {
+export function formatUsdMoney(usdCents: number, currency = "USD", rateMap?: UsdRateMap): string {
   const normalized = normalizeDisplayCurrency(currency);
   const valueInDisplayCurrency = usdCents / 100;
+  const rates = getRateMap(rateMap);
 
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: normalized,
-  }).format(valueInDisplayCurrency * USD_TO_DISPLAY_RATE[normalized]);
+  }).format(valueInDisplayCurrency * rates[normalized]);
 }
 
-export function formatMoney(value: number, currency = "USD"): string {
-  return formatUsdMoney(value, currency);
+export function formatMoney(value: number, currency = "USD", rateMap?: UsdRateMap): string {
+  return formatUsdMoney(value, currency, rateMap);
 }

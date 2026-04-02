@@ -3,7 +3,7 @@
 import type { Account, Category } from "@prisma/client";
 import { FormEvent, useMemo, useState } from "react";
 
-import { formatUsdMoney, parseDisplayAmountToUsdCents } from "@/lib/money";
+import { formatUsdMoney, parseDisplayAmountToUsdCents, type UsdRateMap } from "@/lib/money";
 
 type TransactionRow = {
   id: string;
@@ -34,6 +34,7 @@ type Props = {
   categories: Category[];
   inflowCategoryId: string | null;
   currency: string;
+  usdRateMap: UsdRateMap;
   initialDate: string;
 };
 
@@ -43,6 +44,7 @@ export function TransactionsManager({
   categories,
   inflowCategoryId,
   currency,
+  usdRateMap,
   initialDate,
 }: Props) {
   const initialSpendCategoryId = categories.find((category) => category.specialType !== "INFLOW")?.id ?? "";
@@ -80,7 +82,7 @@ export function TransactionsManager({
 
     let baseAmount = 0;
     try {
-      baseAmount = Math.abs(parseDisplayAmountToUsdCents(amount, currency));
+      baseAmount = Math.abs(parseDisplayAmountToUsdCents(amount, currency, usdRateMap));
     } catch {
       setError("Amount must be a valid number.");
       return;
@@ -103,7 +105,7 @@ export function TransactionsManager({
         }
         let parsedSplit = 0;
         try {
-          parsedSplit = Math.abs(parseDisplayAmountToUsdCents(draft.amount, currency));
+          parsedSplit = Math.abs(parseDisplayAmountToUsdCents(draft.amount, currency, usdRateMap));
         } catch {
           setError("Each split amount must be a valid number.");
           return;
@@ -387,7 +389,7 @@ export function TransactionsManager({
                         ? `Split (${transaction.splits.length})`
                         : transaction.category?.name ?? "Inflow"}
                   </td>
-                  <td>{formatUsdMoney(transaction.amount, currency)}</td>
+                  <td>{formatUsdMoney(transaction.amount, currency, usdRateMap)}</td>
                   <td>
                     <button type="button" className="secondary" onClick={() => deleteTransaction(transaction.id)}>
                       Delete

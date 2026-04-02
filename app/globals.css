@@ -303,8 +303,129 @@ th {
   justify-content: flex-end;
 }
 
+.report-trend-chart {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: rgba(34, 49, 44, 0.24);
+}
+
+.report-trend-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.report-trend-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.report-breakdown-row {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem;
+  background: rgba(34, 49, 44, 0.18);
+}
+
+.report-breakdown-header {
+  justify-content: space-between;
+}
+
+.report-breakdown-bar-track {
+  width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(151, 179, 168, 0.2);
+  overflow: hidden;
+}
+
+.report-breakdown-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2ecc71, #9ff2c2);
+}
+
+.report-donut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.report-donut-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: rgba(34, 49, 44, 0.18);
+}
+
+.report-donut-visual {
+  position: relative;
+  width: min(220px, 100%);
+  margin: 0 auto 0.55rem;
+}
+
+.report-donut-visual svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.report-donut-track {
+  fill: none;
+  stroke: rgba(151, 179, 168, 0.28);
+}
+
+.report-donut-segment {
+  fill: none;
+  stroke-linecap: butt;
+}
+
+.report-donut-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 0.2rem;
+}
+
+.report-donut-center p {
+  margin: 0;
+}
+
+.report-donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.report-donut-legend li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.84rem;
+}
+
+.report-donut-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+}
+
 @media (max-width: 900px) {
   .grid.two {
+    grid-template-columns: 1fr;
+  }
+
+  .report-donut-grid {
     grid-template-columns: 1fr;
   }
 

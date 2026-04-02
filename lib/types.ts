@@ -37,3 +37,41 @@ export type BudgetMonthView = {
   categories: BudgetCategoryRow[];
   warnings: string[];
 };
+
+export type NetWorthTrendPoint = {
+  month: MonthKey;
+  netWorth: Money;
+  changeFromPrevious: Money;
+};
+
+export type SpendingByGroupRow = {
+  groupName: string;
+  spent: Money;
+  share: number;
+  categoryCount: number;
+};
+
+export type TopSpendingCategoryRow = {
+  categoryId: string;
+  categoryName: string;
+  groupName: string;
+  spent: Money;
+  share: number;
+};
+
+export type TopPayeeRow = {
+  payee: string;
+  spent: Money;
+  share: number;
+};
+
+export type MonthlyReportView = {
+  month: MonthKey;
+  totals: BudgetMonthView["totals"];
+  categorySummary: BudgetCategoryRow[];
+  warnings: string[];
+  netWorthTrend: NetWorthTrendPoint[];
+  spendingByGroup: SpendingByGroupRow[];
+  topSpendingCategories: TopSpendingCategoryRow[];
+  topPayees: TopPayeeRow[];
+};

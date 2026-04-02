@@ -3,7 +3,12 @@
 import { Category } from "@prisma/client";
 import { FormEvent, useState } from "react";
 
-import { formatUsdMoney, parseDisplayAmountToUsdCents, usdCentsToDisplayInput } from "@/lib/money";
+import {
+  formatUsdMoney,
+  parseDisplayAmountToUsdCents,
+  type UsdRateMap,
+  usdCentsToDisplayInput,
+} from "@/lib/money";
 
 type AccountWithCounts = {
   id: string;
@@ -22,6 +27,7 @@ type Props = {
   initialBalances: Record<string, number>;
   categories: Category[];
   currency: string;
+  usdRateMap: UsdRateMap;
   initialReconcileDate: string;
 };
 
@@ -30,12 +36,15 @@ export function AccountsManager({
   initialBalances,
   categories,
   currency,
+  usdRateMap,
   initialReconcileDate,
 }: Props) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [balances, setBalances] = useState<Record<string, number>>(initialBalances);
   const [openingEdits, setOpeningEdits] = useState<Record<string, string>>(
-    Object.fromEntries(initialAccounts.map((account) => [account.id, usdCentsToDisplayInput(account.openingBalance, currency)])),
+    Object.fromEntries(
+      initialAccounts.map((account) => [account.id, usdCentsToDisplayInput(account.openingBalance, currency, usdRateMap)]),
+    ),
   );
   const [name, setName] = useState("");
   const [type, setType] = useState<"CASH" | "CHECKING" | "SAVINGS">("CHECKING");
@@ -43,7 +52,7 @@ export function AccountsManager({
   const [reconcileAccountId, setReconcileAccountId] = useState(initialAccounts[0]?.id ?? "");
   const [reconcileDate, setReconcileDate] = useState(initialReconcileDate);
   const [reconcileBalance, setReconcileBalance] = useState(
-    initialAccounts[0] ? usdCentsToDisplayInput(initialBalances[initialAccounts[0].id] ?? 0, currency) : "0",
+    initialAccounts[0] ? usdCentsToDisplayInput(initialBalances[initialAccounts[0].id] ?? 0, currency, usdRateMap) : "0",
   );
   const [shortfallCategoryId, setShortfallCategoryId] = useState(categories[0]?.id ?? "");
   const [reconcileMemo, setReconcileMemo] = useState("");
@@ -60,7 +69,7 @@ export function AccountsManager({
       body: JSON.stringify({
         name,
         type,
-        openingBalance: parseDisplayAmountToUsdCents(openingBalance, currency),
+        openingBalance: parseDisplayAmountToUsdCents(openingBalance, currency, usdRateMap),
       }),
     });
 
@@ -77,7 +86,7 @@ export function AccountsManager({
     }));
     setOpeningEdits((previous) => ({
       ...previous,
-      [payload.account.id]: usdCentsToDisplayInput(payload.account.openingBalance, currency),
+      [payload.account.id]: usdCentsToDisplayInput(payload.account.openingBalance, currency, usdRateMap),
     }));
     setName("");
     setOpeningBalance("0");
@@ -104,7 +113,7 @@ export function AccountsManager({
 
     let nextOpeningBalance = 0;
     try {
-      nextOpeningBalance = parseDisplayAmountToUsdCents(openingEdits[account.id] ?? "0", currency);
+      nextOpeningBalance = parseDisplayAmountToUsdCents(openingEdits[account.id] ?? "0", currency, usdRateMap);
     } catch {
       setError("Starting amount must be a valid number.");
       return;
@@ -164,7 +173,9 @@ export function AccountsManager({
       const nextAccount = accounts.find((item) => item.id !== account.id);
       if (nextAccount) {
         setReconcileAccountId(nextAccount.id);
-        setReconcileBalance(usdCentsToDisplayInput(balances[nextAccount.id] ?? nextAccount.openingBalance, currency));
+        setReconcileBalance(
+          usdCentsToDisplayInput(balances[nextAccount.id] ?? nextAccount.openingBalance, currency, usdRateMap),
+        );
       } else {
         setReconcileAccountId("");
         setReconcileBalance("0");
@@ -179,7 +190,7 @@ export function AccountsManager({
 
     let actualBalance = 0;
     try {
-      actualBalance = parseDisplayAmountToUsdCents(reconcileBalance, currency);
+      actualBalance = parseDisplayAmountToUsdCents(reconcileBalance, currency, usdRateMap);
     } catch {
       setError("Actual balance must be a valid number.");
       return;
@@ -213,7 +224,7 @@ export function AccountsManager({
       return;
     }
 
-    setReconcileMessage(`Reconciled with adjustment ${formatUsdMoney(payload.adjustmentAmount, currency)}.`);
+    setReconcileMessage(`Reconciled with adjustment ${formatUsdMoney(payload.adjustmentAmount, currency, usdRateMap)}.`);
   }
 
   return (
@@ -250,7 +261,7 @@ export function AccountsManager({
               onChange={(event) => {
                 const nextId = event.target.value;
                 setReconcileAccountId(nextId);
-                setReconcileBalance(usdCentsToDisplayInput(balances[nextId] ?? 0, currency));
+                setReconcileBalance(usdCentsToDisplayInput(balances[nextId] ?? 0, currency, usdRateMap));
               }}
             >
               {accounts.map((account) => (
@@ -316,7 +327,9 @@ export function AccountsManager({
                   <td>
                     <div className="inline-row">
                       <input
-                        value={openingEdits[account.id] ?? usdCentsToDisplayInput(account.openingBalance, currency)}
+                        value={
+                          openingEdits[account.id] ?? usdCentsToDisplayInput(account.openingBalance, currency, usdRateMap)
+                        }
                         onChange={(event) =>
                           setOpeningEdits((previous) => ({
                             ...previous,
@@ -330,7 +343,7 @@ export function AccountsManager({
                       </button>
                     </div>
                   </td>
-                  <td>{formatUsdMoney(balances[account.id] ?? account.openingBalance, currency)}</td>
+                  <td>{formatUsdMoney(balances[account.id] ?? account.openingBalance, currency, usdRateMap)}</td>
                   <td>{account.archived ? "Archived" : "Active"}</td>
                   <td>
                     tx: {account._count.transactions}, rules: {account._count.recurringRules}

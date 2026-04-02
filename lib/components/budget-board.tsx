@@ -4,12 +4,18 @@ import type { Account, Category } from "@prisma/client";
 import { FormEvent, Fragment, KeyboardEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { formatUsdMoney, parseDisplayAmountToUsdCents, usdCentsToDisplayInput } from "@/lib/money";
+import {
+  formatUsdMoney,
+  parseDisplayAmountToUsdCents,
+  type UsdRateMap,
+  usdCentsToDisplayInput,
+} from "@/lib/money";
 import type { BudgetMonthView, MonthKey } from "@/lib/types";
 
 type Props = {
   month: MonthKey;
   currency: string;
+  usdRateMap: UsdRateMap;
   initialBudget: BudgetMonthView;
   accounts: Account[];
   categories: Category[];
@@ -18,15 +24,20 @@ type Props = {
   initialQuickDate: string;
 };
 
-function buildAssignmentDrafts(categories: BudgetMonthView["categories"], currency: string): Record<string, string> {
+function buildAssignmentDrafts(
+  categories: BudgetMonthView["categories"],
+  currency: string,
+  usdRateMap: UsdRateMap,
+): Record<string, string> {
   return Object.fromEntries(
-    categories.map((row) => [row.categoryId, usdCentsToDisplayInput(row.assigned, currency)]),
+    categories.map((row) => [row.categoryId, usdCentsToDisplayInput(row.assigned, currency, usdRateMap)]),
   );
 }
 
 export function BudgetBoard({
   month,
   currency,
+  usdRateMap,
   initialBudget,
   accounts,
   categories,
@@ -37,7 +48,7 @@ export function BudgetBoard({
   const router = useRouter();
   const [budget, setBudget] = useState(initialBudget);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>(
-    buildAssignmentDrafts(initialBudget.categories, currency),
+    buildAssignmentDrafts(initialBudget.categories, currency, usdRateMap),
   );
   const [errors, setErrors] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -71,7 +82,7 @@ export function BudgetBoard({
 
     let assignedUsd = 0;
     try {
-      assignedUsd = parseDisplayAmountToUsdCents(assignedDisplayAmount, currency);
+      assignedUsd = parseDisplayAmountToUsdCents(assignedDisplayAmount, currency, usdRateMap);
     } catch {
       setErrors("Assigned amount must be a valid number.");
       return;
@@ -96,13 +107,13 @@ export function BudgetBoard({
       setErrors(payload.error ?? "Failed to save assignment");
       setAssignmentDrafts((previous) => ({
         ...previous,
-        [categoryId]: usdCentsToDisplayInput(existing ?? 0, currency),
+        [categoryId]: usdCentsToDisplayInput(existing ?? 0, currency, usdRateMap),
       }));
       return;
     }
 
     setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency));
+    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
   }
 
   function onAssignmentKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -122,7 +133,7 @@ export function BudgetBoard({
 
     let baseAmount = 0;
     try {
-      baseAmount = Math.abs(parseDisplayAmountToUsdCents(quickAmount, currency));
+      baseAmount = Math.abs(parseDisplayAmountToUsdCents(quickAmount, currency, usdRateMap));
     } catch {
       setErrors("Amount must be a valid number.");
       return;
@@ -179,7 +190,7 @@ export function BudgetBoard({
     }
 
     setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency));
+    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
   }
 
   async function fundAllTargets() {
@@ -203,7 +214,7 @@ export function BudgetBoard({
     }
 
     setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency));
+    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
   }
 
   async function fundRowToTarget(row: BudgetMonthView["categories"][number]) {
@@ -216,7 +227,7 @@ export function BudgetBoard({
     const needed = Math.max(row.targetMonthly - row.available, 0);
     if (needed <= 0) return;
 
-    await saveAssignment(row.categoryId, usdCentsToDisplayInput(row.assigned + needed, currency));
+    await saveAssignment(row.categoryId, usdCentsToDisplayInput(row.assigned + needed, currency, usdRateMap));
   }
 
   return (
@@ -227,7 +238,7 @@ export function BudgetBoard({
           <div className="inline-row">
             <span className={budget.status === "CLOSED" ? "badge-danger" : "muted"}>{budget.status}</span>
             <span className="muted">Ready to assign</span>
-            <strong>{formatUsdMoney(budget.totals.availableToAssign, currency)}</strong>
+            <strong>{formatUsdMoney(budget.totals.availableToAssign, currency, usdRateMap)}</strong>
             <button type="button" className="secondary" onClick={fundAllTargets} disabled={working || budget.status === "CLOSED"}>
               Fund all targets
             </button>
@@ -238,11 +249,11 @@ export function BudgetBoard({
         </div>
         <div className="inline-row">
           <span className="muted">Income</span>
-          <strong>{formatUsdMoney(budget.totals.income, currency)}</strong>
+          <strong>{formatUsdMoney(budget.totals.income, currency, usdRateMap)}</strong>
           <span className="muted">Assigned</span>
-          <strong>{formatUsdMoney(budget.totals.assigned, currency)}</strong>
+          <strong>{formatUsdMoney(budget.totals.assigned, currency, usdRateMap)}</strong>
           <span className="muted">Spent</span>
-          <strong>{formatUsdMoney(budget.totals.spent, currency)}</strong>
+          <strong>{formatUsdMoney(budget.totals.spent, currency, usdRateMap)}</strong>
         </div>
       </section>
 
@@ -343,7 +354,9 @@ export function BudgetBoard({
                       <td>{row.categoryName}</td>
                       <td>
                         <input
-                          value={assignmentDrafts[row.categoryId] ?? usdCentsToDisplayInput(row.assigned, currency)}
+                          value={
+                            assignmentDrafts[row.categoryId] ?? usdCentsToDisplayInput(row.assigned, currency, usdRateMap)
+                          }
                           onChange={(event) =>
                             setAssignmentDrafts((previous) => ({
                               ...previous,
@@ -358,7 +371,7 @@ export function BudgetBoard({
                       </td>
                       <td>
                         <div className="inline-row">
-                          <span>{row.targetMonthly ? formatUsdMoney(row.targetMonthly, currency) : "-"}</span>
+                          <span>{row.targetMonthly ? formatUsdMoney(row.targetMonthly, currency, usdRateMap) : "-"}</span>
                           {row.targetMonthly && row.targetMonthly > 0 ? (
                             <button
                               type="button"
@@ -371,8 +384,8 @@ export function BudgetBoard({
                           ) : null}
                         </div>
                       </td>
-                      <td>{formatUsdMoney(row.activity, currency)}</td>
-                      <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency)}</td>
+                      <td>{formatUsdMoney(row.activity, currency, usdRateMap)}</td>
+                      <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency, usdRateMap)}</td>
                     </tr>
                   ))}
                 </Fragment>
