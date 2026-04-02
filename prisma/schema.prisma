@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CASH
+  CHECKING
+  SAVINGS
+}
+
+enum TransactionStatus {
+  CLEARED
+  UNCLEARED
+}
+
+enum BudgetMonthStatus {
+  OPEN
+  CLOSED
+}
+
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+}
+
+enum ImportRowStatus {
+  VALID
+  ERROR
+  DUPLICATE
+  IMPORTED
+  SKIPPED
+}
+
+enum CategorySpecialType {
+  INFLOW
+}
+
+model User {
+  id           String          @id @default(cuid())
+  email        String          @unique
+  passwordHash String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  settings     Setting?
+  accounts     Account[]
+  categoryGroups CategoryGroup[]
+  categories   Category[]
+  budgetMonths BudgetMonth[]
+  categoryBudgets CategoryBudget[]
+  transactions Transaction[]
+  recurringRules RecurringRule[]
+  imports      Import[]
+}
+
+model Setting {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  currency      String   @default("USD")
+  timezone      String   @default("UTC")
+  monthStartDay Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id             String     @id @default(cuid())
+  userId         String
+  name           String
+  type           AccountType
+  openingBalance Int        @default(0)
+  archived       Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   Transaction[]
+  recurringRules RecurringRule[]
+
+  @@unique([userId, name])
+}
+
+model CategoryGroup {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  sortOrder Int      @default(0)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Category[]
+
+  @@unique([userId, name])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String
+  name        String
+  specialType CategorySpecialType?
+  targetMonthly Int?
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group       CategoryGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  budgets     CategoryBudget[]
+  transactions Transaction[]
+  recurringRules RecurringRule[]
+  splits      TransactionSplit[]
+
+  @@unique([userId, name])
+}
+
+model BudgetMonth {
+  id            String   @id @default(cuid())
+  userId        String
+  monthKey      String
+  status        BudgetMonthStatus @default(OPEN)
+  closedAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryBudgets CategoryBudget[]
+
+  @@unique([userId, monthKey])
+}
+
+model CategoryBudget {
+  id            String   @id @default(cuid())
+  userId        String
+  budgetMonthId String
+  categoryId    String
+  assigned      Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budgetMonth   BudgetMonth @relation(fields: [budgetMonthId], references: [id], onDelete: Cascade)
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([budgetMonthId, categoryId])
+}
+
+model Import {
+  id             String   @id @default(cuid())
+  userId         String
+  fileName       String
+  checksum       String
+  rowCount       Int      @default(0)
+  importedCount  Int      @default(0)
+  duplicateCount Int      @default(0)
+  errorCount     Int      @default(0)
+  committedAt    DateTime?
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rows           ImportRow[]
+  transactions   Transaction[]
+}
+
+model ImportRow {
+  id         String        @id @default(cuid())
+  importId   String
+  rowNumber  Int
+  raw        Json
+  status     ImportRowStatus
+  error      String?
+  dedupeHash String?
+  createdAt  DateTime      @default(now())
+  import     Import         @relation(fields: [importId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id             String   @id @default(cuid())
+  userId         String
+  accountId      String
+  categoryId     String?
+  importId       String?
+  date           DateTime
+  payee          String
+  memo           String?
+  amount         Int
+  status         TransactionStatus
+  transferGroup  String?
+  dedupeHash     String?
+  recurringRuleId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  import         Import?  @relation(fields: [importId], references: [id], onDelete: SetNull)
+  recurringRule  RecurringRule? @relation(fields: [recurringRuleId], references: [id], onDelete: SetNull)
+  recurringGeneration RecurringGeneration?
+  splits         TransactionSplit[]
+
+  @@index([userId, date])
+  @@index([userId, categoryId, date])
+  @@index([userId, dedupeHash])
+  @@index([transferGroup])
+}
+
+model TransactionSplit {
+  id            String   @id @default(cuid())
+  transactionId String
+  categoryId    String
+  amount        Int
+  memo          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  category      Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([transactionId])
+  @@index([categoryId])
+}
+
+model RecurringRule {
+  id              String   @id @default(cuid())
+  userId          String
+  accountId       String
+  categoryId      String?
+  payee           String
+  memo            String?
+  amount          Int
+  status          TransactionStatus @default(UNCLEARED)
+  frequency       RecurringFrequency
+  nextRunDate     DateTime
+  active          Boolean  @default(true)
+  lastGeneratedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category        Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions    Transaction[]
+  generations     RecurringGeneration[]
+}
+
+model RecurringGeneration {
+  id             String   @id @default(cuid())
+  ruleId         String
+  occurrenceDate DateTime
+  transactionId  String   @unique
+  createdAt      DateTime @default(now())
+  rule           RecurringRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  transaction    Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, occurrenceDate])
+}
