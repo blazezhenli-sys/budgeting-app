@@ -74,24 +74,26 @@ export function ImportManager() {
             {result.duplicateCount !== undefined ? <p className="muted">Duplicates: {result.duplicateCount}</p> : null}
 
             <h3>Errors</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Row</th>
-                  <th>Field</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(result.errors ?? []).map((item) => (
-                  <tr key={`${item.row}-${item.field}-${item.reason}`}>
-                    <td>{item.row}</td>
-                    <td>{item.field}</td>
-                    <td>{item.reason}</td>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Row</th>
+                    <th>Field</th>
+                    <th>Reason</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(result.errors ?? []).map((item) => (
+                    <tr key={`${item.row}-${item.field}-${item.reason}`}>
+                      <td>{item.row}</td>
+                      <td>{item.field}</td>
+                      <td>{item.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
           <p className="muted">Run a dry parse first, then commit.</p>

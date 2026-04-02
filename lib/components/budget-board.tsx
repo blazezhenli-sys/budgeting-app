@@ -321,63 +321,65 @@ export function BudgetBoard({
           <p className="muted">No overspending warnings.</p>
         )}
 
-        <table>
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Assigned</th>
-              <th>Target</th>
-              <th>Activity</th>
-              <th>Available</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groupedRows.map(([groupName, rows]) => (
-              <Fragment key={groupName}>
-                <tr className="group-header-row">
-                  <td colSpan={5}>{groupName}</td>
-                </tr>
-                {rows.map((row) => (
-                  <tr key={row.categoryId}>
-                    <td>{row.categoryName}</td>
-                    <td>
-                      <input
-                        value={assignmentDrafts[row.categoryId] ?? usdCentsToDisplayInput(row.assigned, currency)}
-                        onChange={(event) =>
-                          setAssignmentDrafts((previous) => ({
-                            ...previous,
-                            [row.categoryId]: event.target.value,
-                          }))
-                        }
-                        onBlur={() => saveAssignment(row.categoryId, assignmentDrafts[row.categoryId] ?? "0")}
-                        onKeyDown={onAssignmentKeyDown}
-                        style={{ width: "110px" }}
-                        disabled={budget.status === "CLOSED"}
-                      />
-                    </td>
-                    <td>
-                      <div className="inline-row">
-                        <span>{row.targetMonthly ? formatUsdMoney(row.targetMonthly, currency) : "-"}</span>
-                        {row.targetMonthly && row.targetMonthly > 0 ? (
-                          <button
-                            type="button"
-                            className="secondary"
-                            disabled={budget.status === "CLOSED"}
-                            onClick={() => fundRowToTarget(row)}
-                          >
-                            Fund
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td>{formatUsdMoney(row.activity, currency)}</td>
-                    <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency)}</td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Assigned</th>
+                <th>Target</th>
+                <th>Activity</th>
+                <th>Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedRows.map(([groupName, rows]) => (
+                <Fragment key={groupName}>
+                  <tr className="group-header-row">
+                    <td colSpan={5}>{groupName}</td>
                   </tr>
-                ))}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                  {rows.map((row) => (
+                    <tr key={row.categoryId}>
+                      <td>{row.categoryName}</td>
+                      <td>
+                        <input
+                          value={assignmentDrafts[row.categoryId] ?? usdCentsToDisplayInput(row.assigned, currency)}
+                          onChange={(event) =>
+                            setAssignmentDrafts((previous) => ({
+                              ...previous,
+                              [row.categoryId]: event.target.value,
+                            }))
+                          }
+                          onBlur={() => saveAssignment(row.categoryId, assignmentDrafts[row.categoryId] ?? "0")}
+                          onKeyDown={onAssignmentKeyDown}
+                          style={{ width: "110px" }}
+                          disabled={budget.status === "CLOSED"}
+                        />
+                      </td>
+                      <td>
+                        <div className="inline-row">
+                          <span>{row.targetMonthly ? formatUsdMoney(row.targetMonthly, currency) : "-"}</span>
+                          {row.targetMonthly && row.targetMonthly > 0 ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={budget.status === "CLOSED"}
+                              onClick={() => fundRowToTarget(row)}
+                            >
+                              Fund
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{formatUsdMoney(row.activity, currency)}</td>
+                      <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency)}</td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

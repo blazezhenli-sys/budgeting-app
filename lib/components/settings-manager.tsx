@@ -248,73 +248,77 @@ export function SettingsManager({ initialSettings, rules, accounts, categories, 
 
       <section className="card">
         <h2>Recurring rules</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Payee</th>
-              <th>Account</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>Frequency</th>
-              <th>Next run</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {ruleList.map((rule) => (
-              <tr key={rule.id}>
-                <td>{rule.payee}</td>
-                <td>{rule.account.name}</td>
-                <td>{rule.category?.name ?? "Inflow"}</td>
-                <td>{formatUsdMoney(rule.amount, currency)}</td>
-                <td>{rule.frequency}</td>
-                <td>{formatDateOnly(rule.nextRunDate)}</td>
-                <td>{rule.active ? "Active" : "Paused"}</td>
-                <td>
-                  <button type="button" className="secondary" onClick={() => toggleRule(rule.id, rule.active)}>
-                    {rule.active ? "Pause" : "Resume"}
-                  </button>
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Payee</th>
+                <th>Account</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Frequency</th>
+                <th>Next run</th>
+                <th>Status</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {ruleList.map((rule) => (
+                <tr key={rule.id}>
+                  <td>{rule.payee}</td>
+                  <td>{rule.account.name}</td>
+                  <td>{rule.category?.name ?? "Inflow"}</td>
+                  <td>{formatUsdMoney(rule.amount, currency)}</td>
+                  <td>{rule.frequency}</td>
+                  <td>{formatDateOnly(rule.nextRunDate)}</td>
+                  <td>{rule.active ? "Active" : "Paused"}</td>
+                  <td>
+                    <button type="button" className="secondary" onClick={() => toggleRule(rule.id, rule.active)}>
+                      {rule.active ? "Pause" : "Resume"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="card">
         <h2>Recurring queue</h2>
         {queue.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th />
-                <th>Date</th>
-                <th>Payee</th>
-                <th>Account</th>
-                <th>Category</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queue.map((item) => (
-                <tr key={`${item.ruleId}-${item.nextRunDate}`}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedQueueRuleIds.includes(item.ruleId)}
-                      onChange={() => toggleQueueRule(item.ruleId)}
-                    />
-                  </td>
-                  <td>{item.nextRunDate}</td>
-                  <td>{item.payee}</td>
-                  <td>{item.account.name}</td>
-                  <td>{item.category?.name ?? "Inflow"}</td>
-                  <td>{formatUsdMoney(item.amount, currency)}</td>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th />
+                  <th>Date</th>
+                  <th>Payee</th>
+                  <th>Account</th>
+                  <th>Category</th>
+                  <th>Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {queue.map((item) => (
+                  <tr key={`${item.ruleId}-${item.nextRunDate}`}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedQueueRuleIds.includes(item.ruleId)}
+                        onChange={() => toggleQueueRule(item.ruleId)}
+                      />
+                    </td>
+                    <td>{item.nextRunDate}</td>
+                    <td>{item.payee}</td>
+                    <td>{item.account.name}</td>
+                    <td>{item.category?.name ?? "Inflow"}</td>
+                    <td>{formatUsdMoney(item.amount, currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <p className="muted">No recurring transactions are due right now.</p>
         )}

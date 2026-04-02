@@ -12,6 +12,14 @@ export default async function AccountsPage() {
   const [accounts, settings, categories, sums] = await Promise.all([
     prisma.account.findMany({
       where: { userId: user.id },
+      include: {
+        _count: {
+          select: {
+            transactions: true,
+            recurringRules: true,
+          },
+        },
+      },
       orderBy: { createdAt: "asc" },
     }),
     ensureSettings(user.id),

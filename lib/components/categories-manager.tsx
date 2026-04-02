@@ -221,8 +221,8 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
       <section className="card">
         <h2>Categories</h2>
         {grouped.map((group) => (
-          <div key={group.id} style={{ marginBottom: "1rem" }}>
-            <div className="inline-row" style={{ justifyContent: "space-between" }}>
+          <div key={group.id} className="category-group-block">
+            <div className="inline-row category-group-header">
               <h3>{group.name}</h3>
               <button
                 type="button"
@@ -236,16 +236,16 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
                 Delete group
               </button>
             </div>
-            <ul>
+            <ul className="category-list">
               {group.categories.map((category) => (
-                <li key={category.id} className="inline-row" style={{ justifyContent: "space-between" }}>
-                  <div className="inline-row" style={{ flex: 1 }}>
-                    <span>
+                <li key={category.id} className="category-item">
+                  <div className="category-main">
+                    <span className="category-name">
                       {category.name}
                       {category.specialType === "INFLOW" ? " (System)" : ""}
                     </span>
                     {category.specialType === "INFLOW" ? null : (
-                      <div className="inline-row">
+                      <div className="category-target">
                         <input
                           value={targetDrafts[category.id] ?? ""}
                           onChange={(event) =>
@@ -254,8 +254,9 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
                               [category.id]: event.target.value,
                             }))
                           }
-                          style={{ width: "120px" }}
+                          className="category-target-input"
                           aria-label={`Target for ${category.name}`}
+                          placeholder={`Target (${currency})`}
                         />
                         <button type="button" className="secondary" onClick={() => saveTarget(category)}>
                           Save target
@@ -263,21 +264,23 @@ export function CategoriesManager({ initialGroups, initialCategories, currency }
                       </div>
                     )}
                   </div>
-                  {category.specialType === "INFLOW" ? (
-                    <span className="muted">Locked</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => {
-                        if (confirm(`Delete category \"${category.name}\"?`)) {
-                          void deleteCategory(category.id);
-                        }
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <div className="category-actions">
+                    {category.specialType === "INFLOW" ? (
+                      <span className="muted">Locked</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          if (confirm(`Delete category \"${category.name}\"?`)) {
+                            void deleteCategory(category.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

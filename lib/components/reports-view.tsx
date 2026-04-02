@@ -86,28 +86,30 @@ export function ReportsView({
           <p>Spent: {formatUsdMoney(report.totals.spent, currency)}</p>
           <p>Ready to assign: {formatUsdMoney(report.totals.availableToAssign, currency)}</p>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Group</th>
-              <th>Category</th>
-              <th>Assigned</th>
-              <th>Activity</th>
-              <th>Available</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report.categorySummary.map((row) => (
-              <tr key={row.categoryId}>
-                <td>{row.groupName}</td>
-                <td>{row.categoryName}</td>
-                <td>{formatUsdMoney(row.assigned, currency)}</td>
-                <td>{formatUsdMoney(row.activity, currency)}</td>
-                <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency)}</td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Category</th>
+                <th>Assigned</th>
+                <th>Activity</th>
+                <th>Available</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {report.categorySummary.map((row) => (
+                <tr key={row.categoryId}>
+                  <td>{row.groupName}</td>
+                  <td>{row.categoryName}</td>
+                  <td>{formatUsdMoney(row.assigned, currency)}</td>
+                  <td>{formatUsdMoney(row.activity, currency)}</td>
+                  <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

@@ -362,40 +362,42 @@ export function TransactionsManager({
 
       <section className="card">
         <h2>Recent transactions</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Payee</th>
-              <th>Account</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {sortedTransactions.map((transaction) => (
-              <tr key={transaction.id}>
-                <td>{transaction.date.slice(0, 10)}</td>
-                <td>{transaction.payee}</td>
-                <td>{transaction.account?.name ?? "-"}</td>
-                <td>
-                  {transaction.transferGroup
-                    ? "Transfer"
-                    : transaction.splits.length
-                      ? `Split (${transaction.splits.length})`
-                      : transaction.category?.name ?? "Inflow"}
-                </td>
-                <td>{formatUsdMoney(transaction.amount, currency)}</td>
-                <td>
-                  <button type="button" className="secondary" onClick={() => deleteTransaction(transaction.id)}>
-                    Delete
-                  </button>
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Payee</th>
+                <th>Account</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sortedTransactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td>{transaction.date.slice(0, 10)}</td>
+                  <td>{transaction.payee}</td>
+                  <td>{transaction.account?.name ?? "-"}</td>
+                  <td>
+                    {transaction.transferGroup
+                      ? "Transfer"
+                      : transaction.splits.length
+                        ? `Split (${transaction.splits.length})`
+                        : transaction.category?.name ?? "Inflow"}
+                  </td>
+                  <td>{formatUsdMoney(transaction.amount, currency)}</td>
+                  <td>
+                    <button type="button" className="secondary" onClick={() => deleteTransaction(transaction.id)}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

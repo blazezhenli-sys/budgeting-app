@@ -1,12 +1,24 @@
 "use client";
 
-import { Account, Category } from "@prisma/client";
+import { Category } from "@prisma/client";
 import { FormEvent, useState } from "react";
 
 import { formatUsdMoney, parseDisplayAmountToUsdCents, usdCentsToDisplayInput } from "@/lib/money";
 
+type AccountWithCounts = {
+  id: string;
+  name: string;
+  type: "CASH" | "CHECKING" | "SAVINGS";
+  openingBalance: number;
+  archived: boolean;
+  _count: {
+    transactions: number;
+    recurringRules: number;
+  };
+};
+
 type Props = {
-  initialAccounts: Account[];
+  initialAccounts: AccountWithCounts[];
   initialBalances: Record<string, number>;
   categories: Category[];
   currency: string;
@@ -22,6 +34,9 @@ export function AccountsManager({
 }: Props) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [balances, setBalances] = useState<Record<string, number>>(initialBalances);
+  const [openingEdits, setOpeningEdits] = useState<Record<string, string>>(
+    Object.fromEntries(initialAccounts.map((account) => [account.id, usdCentsToDisplayInput(account.openingBalance, currency)])),
+  );
   const [name, setName] = useState("");
   const [type, setType] = useState<"CASH" | "CHECKING" | "SAVINGS">("CHECKING");
   const [openingBalance, setOpeningBalance] = useState("0");
@@ -60,11 +75,15 @@ export function AccountsManager({
       ...previous,
       [payload.account.id]: payload.account.openingBalance,
     }));
+    setOpeningEdits((previous) => ({
+      ...previous,
+      [payload.account.id]: usdCentsToDisplayInput(payload.account.openingBalance, currency),
+    }));
     setName("");
     setOpeningBalance("0");
   }
 
-  async function toggleArchive(account: Account) {
+  async function toggleArchive(account: AccountWithCounts) {
     const response = await fetch("/api/accounts", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -78,6 +97,79 @@ export function AccountsManager({
     }
 
     setAccounts((previous) => previous.map((item) => (item.id === account.id ? payload.account : item)));
+  }
+
+  async function saveOpeningBalance(account: AccountWithCounts) {
+    setError(null);
+
+    let nextOpeningBalance = 0;
+    try {
+      nextOpeningBalance = parseDisplayAmountToUsdCents(openingEdits[account.id] ?? "0", currency);
+    } catch {
+      setError("Starting amount must be a valid number.");
+      return;
+    }
+
+    const response = await fetch("/api/accounts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: account.id, openingBalance: nextOpeningBalance }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? "Failed to update starting amount");
+      return;
+    }
+
+    const delta = nextOpeningBalance - account.openingBalance;
+    setAccounts((previous) => previous.map((item) => (item.id === account.id ? payload.account : item)));
+    setBalances((previous) => ({
+      ...previous,
+      [account.id]: (previous[account.id] ?? account.openingBalance) + delta,
+    }));
+  }
+
+  async function deleteAccount(account: AccountWithCounts) {
+    setError(null);
+
+    const response = await fetch(`/api/accounts?id=${account.id}`, {
+      method: "DELETE",
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (response.status === 409 && payload.dependencies) {
+        setError(
+          `Cannot delete ${account.name}: ${payload.dependencies.transactions} transactions and ${payload.dependencies.recurringRules} recurring rules depend on it.`,
+        );
+        return;
+      }
+      setError(payload.error ?? "Failed to delete account");
+      return;
+    }
+
+    setAccounts((previous) => previous.filter((item) => item.id !== account.id));
+    setBalances((previous) => {
+      const next = { ...previous };
+      delete next[account.id];
+      return next;
+    });
+    setOpeningEdits((previous) => {
+      const next = { ...previous };
+      delete next[account.id];
+      return next;
+    });
+
+    if (reconcileAccountId === account.id) {
+      const nextAccount = accounts.find((item) => item.id !== account.id);
+      if (nextAccount) {
+        setReconcileAccountId(nextAccount.id);
+        setReconcileBalance(usdCentsToDisplayInput(balances[nextAccount.id] ?? nextAccount.openingBalance, currency));
+      } else {
+        setReconcileAccountId("");
+        setReconcileBalance("0");
+      }
+    }
   }
 
   async function reconcileAccount(event: FormEvent<HTMLFormElement>) {
@@ -203,34 +295,66 @@ export function AccountsManager({
 
       <section className="card">
         <h2>Accounts</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Opening</th>
-              <th>Current</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((account) => (
-              <tr key={account.id}>
-                <td>{account.name}</td>
-                <td>{account.type}</td>
-                <td>{formatUsdMoney(account.openingBalance, currency)}</td>
-                <td>{formatUsdMoney(balances[account.id] ?? account.openingBalance, currency)}</td>
-                <td>{account.archived ? "Archived" : "Active"}</td>
-                <td>
-                  <button type="button" className="secondary" onClick={() => toggleArchive(account)}>
-                    {account.archived ? "Unarchive" : "Archive"}
-                  </button>
-                </td>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Starting amount</th>
+                <th>Current</th>
+                <th>Status</th>
+                <th>Dependencies</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {accounts.map((account) => (
+                <tr key={account.id}>
+                  <td>{account.name}</td>
+                  <td>{account.type}</td>
+                  <td>
+                    <div className="inline-row">
+                      <input
+                        value={openingEdits[account.id] ?? usdCentsToDisplayInput(account.openingBalance, currency)}
+                        onChange={(event) =>
+                          setOpeningEdits((previous) => ({
+                            ...previous,
+                            [account.id]: event.target.value,
+                          }))
+                        }
+                        style={{ width: "110px" }}
+                      />
+                      <button type="button" className="secondary" onClick={() => saveOpeningBalance(account)}>
+                        Save
+                      </button>
+                    </div>
+                  </td>
+                  <td>{formatUsdMoney(balances[account.id] ?? account.openingBalance, currency)}</td>
+                  <td>{account.archived ? "Archived" : "Active"}</td>
+                  <td>
+                    tx: {account._count.transactions}, rules: {account._count.recurringRules}
+                  </td>
+                  <td>
+                    <div className="inline-row">
+                      <button type="button" className="secondary" onClick={() => toggleArchive(account)}>
+                        {account.archived ? "Unarchive" : "Archive"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={account._count.transactions > 0 || account._count.recurringRules > 0}
+                        onClick={() => deleteAccount(account)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

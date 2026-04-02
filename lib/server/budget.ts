@@ -81,6 +81,27 @@ async function incomeSum(userId: string, start?: Date, end?: Date): Promise<numb
   return aggregate._sum.amount ?? 0;
 }
 
+async function openingBalanceSum(userId: string, start?: Date, end?: Date): Promise<number> {
+  const aggregate = await prisma.account.aggregate({
+    where: {
+      userId,
+      ...(start || end
+        ? {
+            createdAt: {
+              ...(start ? { gte: start } : {}),
+              ...(end ? { lte: end } : {}),
+            },
+          }
+        : {}),
+    },
+    _sum: {
+      openingBalance: true,
+    },
+  });
+
+  return aggregate._sum.openingBalance ?? 0;
+}
+
 async function assignedSum(userId: string, month: MonthKey, currentMonth = false): Promise<number> {
   const aggregate = await prisma.categoryBudget.aggregate({
     where: {
@@ -160,13 +181,15 @@ export async function assignmentCapacity(userId: string, month: MonthKey): Promi
   await ensureInflowCategory(userId);
   const { start, end } = monthBounds(month);
 
-  const [incomeBefore, incomeCurrent, assignedBefore] = await Promise.all([
+  const [incomeBefore, incomeCurrent, openingBefore, openingCurrent, assignedBefore] = await Promise.all([
     incomeSum(userId, undefined, new Date(start.getTime() - 1)),
     incomeSum(userId, start, end),
+    openingBalanceSum(userId, undefined, new Date(start.getTime() - 1)),
+    openingBalanceSum(userId, start, endOfDay(end)),
     assignedSum(userId, month),
   ]);
 
-  return incomeBefore + incomeCurrent - assignedBefore;
+  return incomeBefore + incomeCurrent + openingBefore + openingCurrent - assignedBefore;
 }
 
 export async function getBudgetMonthView(userId: string, month: MonthKey): Promise<BudgetMonthView> {
@@ -210,12 +233,15 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
   for (const item of priorAssignments) {
     addToMap(assignedPriorByCategory, item.categoryId, item.assigned);
   }
-  const [incomeBefore, incomeCurrent, assignedBefore, assignedCurrent] = await Promise.all([
+  const [incomeBefore, incomeCurrent, openingBefore, openingCurrent, assignedBefore, assignedCurrent] =
+    await Promise.all([
     incomeSum(userId, undefined, new Date(start.getTime() - 1)),
     incomeSum(userId, start, endOfDay(end)),
+    openingBalanceSum(userId, undefined, new Date(start.getTime() - 1)),
+    openingBalanceSum(userId, start, endOfDay(end)),
     assignedSum(userId, month),
     assignedSum(userId, month, true),
-  ]);
+    ]);
 
   const rows = categories.map((category) => {
     const assigned = assignedCurrentByCategory.get(category.id) ?? 0;
@@ -243,7 +269,12 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
     .filter((amount) => amount < 0)
     .reduce((sum, amount) => sum + Math.abs(amount), 0);
 
-  const ready = availableToAssign(incomeBefore, incomeCurrent, assignedBefore, assignedCurrent);
+  const ready = availableToAssign(
+    incomeBefore + openingBefore,
+    incomeCurrent + openingCurrent,
+    assignedBefore,
+    assignedCurrent,
+  );
   const warnings = rows.filter((row) => row.overspent).map((row) => `${row.categoryName} is overspent`);
 
   return {
