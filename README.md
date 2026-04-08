@@ -47,7 +47,7 @@ docker compose --profile prod up -d --build
 http://localhost:3000
 ```
 
-The `app` service runs `db:push` and `db:seed` automatically on startup.
+The `app` service prepares schema on startup (`migrate deploy` when migrations exist, otherwise `db:push`).
 
 ## Live-reload container mode (no rebuilds for code changes)
 Use this when you want repo changes to apply directly inside the container:
@@ -70,6 +70,7 @@ If you prefer running Next.js directly on your machine while using Docker Postgr
 docker compose up -d db
 npm run db:generate
 npm run db:push
+# Optional baseline categories + user setup
 npm run db:seed
 # Optional: generate 3-6 months of local dummy budgeting history (default 6)
 npm run db:seed:history

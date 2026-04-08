@@ -162,9 +162,10 @@ function DonutChart({
             {segments.map((segment) => (
               <li key={`${title}-legend-${segment.label}`}>
                 <span className="report-donut-dot" style={{ backgroundColor: segment.color }} />
-                <span>{segment.label}</span>
-                <span>{formatUsdMoney(segment.amount, currency, usdRateMap)}</span>
-                <span>{percentage(segment.share)}</span>
+                <span className="report-donut-label">{segment.label}</span>
+                <span className="report-donut-figure">
+                  {formatUsdMoney(segment.amount, currency, usdRateMap)} • {percentage(segment.share)}
+                </span>
               </li>
             ))}
           </ul>
@@ -231,10 +232,10 @@ export function ReportsView({
   }
 
   return (
-    <div className="grid">
+    <div className="grid reports-view">
       <section className="card">
         <h2>Monthly summary</h2>
-        <div className="inline-row">
+        <div className="inline-row report-toolbar">
           <label>
             Month
             <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -263,7 +264,7 @@ export function ReportsView({
 
       <section className="card">
         <h2>Monthly spending snapshot</h2>
-        <div className="inline-row">
+        <div className="report-kpis">
           <p>Income: {formatUsdMoney(report.totals.income, currency, usdRateMap)}</p>
           <p>Assigned: {formatUsdMoney(report.totals.assigned, currency, usdRateMap)}</p>
           <p>Spent: {formatUsdMoney(report.totals.spent, currency, usdRateMap)}</p>
@@ -286,7 +287,7 @@ export function ReportsView({
           {trendFirst && trendLast ? `${monthLabel(trendFirst.month)} to ${monthLabel(trendLast.month)}` : "No trend data yet"}
         </p>
         {trendLast ? (
-          <div className="inline-row">
+          <div className="report-kpis">
             <p>Current net worth: {formatUsdMoney(trendLast.netWorth, currency, usdRateMap)}</p>
             <p>Window change: {formatSignedMoney(trendWindowChange, currency, usdRateMap)}</p>
           </div>
@@ -301,7 +302,7 @@ export function ReportsView({
           </div>
         ) : null}
         {report.netWorthTrend.length ? (
-          <div className="table-scroll">
+          <div className="table-scroll report-table-scroll report-networth-table">
             <table>
               <thead>
                 <tr>
@@ -350,8 +351,8 @@ export function ReportsView({
             {report.spendingByGroup.map((group) => (
               <div key={group.groupName} className="report-breakdown-row">
                 <div className="inline-row report-breakdown-header">
-                  <span>{group.groupName}</span>
-                  <span>
+                  <span className="report-breakdown-title">{group.groupName}</span>
+                  <span className="report-breakdown-amount">
                     {formatUsdMoney(group.spent, currency, usdRateMap)} ({percentage(group.share)})
                   </span>
                 </div>
@@ -369,7 +370,7 @@ export function ReportsView({
 
       <section className="card">
         <h2>Category activity</h2>
-        <div className="table-scroll">
+        <div className="table-scroll report-table-scroll report-category-table">
           <table>
             <thead>
               <tr>

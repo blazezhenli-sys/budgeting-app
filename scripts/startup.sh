@@ -10,7 +10,7 @@ else
   npm run db:push
 fi
 
-if [ "${RUN_DB_SEED_ON_STARTUP:-true}" = "true" ]; then
+if [ "${RUN_DB_SEED_ON_STARTUP:-false}" = "true" ]; then
   echo "[startup] Running seed..."
   npm run db:seed
 fi
