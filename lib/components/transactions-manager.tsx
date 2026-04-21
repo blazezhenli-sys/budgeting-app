@@ -3,7 +3,7 @@
 import type { Account, Category } from "@prisma/client";
 import { FormEvent, useMemo, useState } from "react";
 
-import { formatUsdMoney, parseDisplayAmountToUsdCents, type UsdRateMap } from "@/lib/money";
+import { formatUsdMoney, parseDisplayAmountToUsdCents, type UsdRateMap, usdCentsToDisplayInput } from "@/lib/money";
 
 type TransactionRow = {
   id: string;
@@ -11,9 +11,11 @@ type TransactionRow = {
   payee: string;
   memo: string | null;
   amount: number;
+  status: "CLEARED" | "UNCLEARED";
   transferGroup: string | null;
-  account: { name: string };
-  category: { name: string } | null;
+  account: { id: string; name: string };
+  categoryId: string | null;
+  category: { id: string; name: string } | null;
   splits: Array<{
     id: string;
     amount: number;
@@ -67,6 +69,14 @@ export function TransactionsManager({
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([
     { categoryId: initialSpendCategoryId, amount: "0", memo: "" },
   ]);
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState(initialDate);
+  const [editAccountId, setEditAccountId] = useState(accounts[0]?.id ?? "");
+  const [editCategoryId, setEditCategoryId] = useState(initialSpendCategoryId);
+  const [editDirection, setEditDirection] = useState<"expense" | "income">("expense");
+  const [editPayee, setEditPayee] = useState("");
+  const [editMemo, setEditMemo] = useState("");
+  const [editAmount, setEditAmount] = useState("0");
   const [error, setError] = useState<string | null>(null);
 
   const spendCategories = categories.filter((category) => category.specialType !== "INFLOW");
@@ -176,6 +186,108 @@ export function TransactionsManager({
     }
 
     setTransactions((previous) => previous.filter((row) => row.id !== id));
+  }
+
+  function isEditableTransaction(transaction: TransactionRow): boolean {
+    return !transaction.transferGroup && transaction.splits.length === 0;
+  }
+
+  function startEditing(transaction: TransactionRow) {
+    if (!isEditableTransaction(transaction)) {
+      setError("Transfer and split transactions must be deleted and recreated.");
+      return;
+    }
+
+    setError(null);
+    setEditingTransactionId(transaction.id);
+    setEditDate(transaction.date.slice(0, 10));
+    setEditAccountId(transaction.account.id);
+    setEditPayee(transaction.payee);
+    setEditMemo(transaction.memo ?? "");
+    setEditDirection(transaction.amount >= 0 ? "income" : "expense");
+    setEditAmount(usdCentsToDisplayInput(Math.abs(transaction.amount), currency, usdRateMap));
+    setEditCategoryId(transaction.categoryId ?? initialSpendCategoryId);
+  }
+
+  function cancelEditing() {
+    setEditingTransactionId(null);
+  }
+
+  async function saveEditingTransaction() {
+    if (!editingTransactionId) return;
+    setError(null);
+
+    let baseAmount = 0;
+    try {
+      baseAmount = Math.abs(parseDisplayAmountToUsdCents(editAmount, currency, usdRateMap));
+    } catch {
+      setError("Amount must be a valid number.");
+      return;
+    }
+
+    if (baseAmount <= 0) {
+      setError("Amount must be greater than zero.");
+      return;
+    }
+
+    const signedAmount = editDirection === "income" ? baseAmount : baseAmount * -1;
+    const categoryForRequest = editDirection === "income" ? inflowCategoryId : editCategoryId;
+
+    if (editDirection === "income" && !inflowCategoryId) {
+      setError("Inflow category unavailable.");
+      return;
+    }
+    if (editDirection === "expense" && !categoryForRequest) {
+      setError("Category is required for expense transactions.");
+      return;
+    }
+
+    const response = await fetch("/api/transactions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editingTransactionId,
+        date: editDate,
+        accountId: editAccountId,
+        categoryId: categoryForRequest,
+        payee: editPayee,
+        memo: editMemo || null,
+        amount: signedAmount,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? "Failed to update transaction");
+      return;
+    }
+
+    const nextAccount = accounts.find((account) => account.id === editAccountId);
+    const nextCategory =
+      signedAmount > 0
+        ? categories.find((category) => category.id === inflowCategoryId) ?? null
+        : categories.find((category) => category.id === categoryForRequest) ?? null;
+
+    setTransactions((previous) =>
+      previous.map((row) =>
+        row.id === editingTransactionId
+          ? {
+              ...row,
+              date: new Date(editDate).toISOString(),
+              payee: editPayee,
+              memo: editMemo || null,
+              amount: signedAmount,
+              account: {
+                id: editAccountId,
+                name: nextAccount?.name ?? row.account.name,
+              },
+              categoryId: categoryForRequest ?? null,
+              category: nextCategory ? { id: nextCategory.id, name: nextCategory.name } : null,
+            }
+          : row,
+      ),
+    );
+    setEditingTransactionId(null);
   }
 
   function addSplitRow() {
@@ -379,21 +491,107 @@ export function TransactionsManager({
             <tbody>
               {sortedTransactions.map((transaction) => (
                 <tr key={transaction.id}>
-                  <td>{transaction.date.slice(0, 10)}</td>
-                  <td>{transaction.payee}</td>
-                  <td>{transaction.account?.name ?? "-"}</td>
                   <td>
-                    {transaction.transferGroup
-                      ? "Transfer"
-                      : transaction.splits.length
-                        ? `Split (${transaction.splits.length})`
-                        : transaction.category?.name ?? "Inflow"}
+                    {editingTransactionId === transaction.id ? (
+                      <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+                    ) : (
+                      transaction.date.slice(0, 10)
+                    )}
                   </td>
-                  <td>{formatUsdMoney(transaction.amount, currency, usdRateMap)}</td>
                   <td>
-                    <button type="button" className="secondary" onClick={() => deleteTransaction(transaction.id)}>
-                      Delete
-                    </button>
+                    {editingTransactionId === transaction.id ? (
+                      <div className="grid">
+                        <input value={editPayee} onChange={(event) => setEditPayee(event.target.value)} />
+                        <input
+                          placeholder="Memo (optional)"
+                          value={editMemo}
+                          onChange={(event) => setEditMemo(event.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      transaction.payee
+                    )}
+                  </td>
+                  <td>
+                    {editingTransactionId === transaction.id ? (
+                      <select value={editAccountId} onChange={(event) => setEditAccountId(event.target.value)}>
+                        {accounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      transaction.account?.name ?? "-"
+                    )}
+                  </td>
+                  <td>
+                    {editingTransactionId === transaction.id ? (
+                      editDirection === "income" ? (
+                        inflowCategory?.name ?? "Inflow"
+                      ) : (
+                        <select value={editCategoryId} onChange={(event) => setEditCategoryId(event.target.value)}>
+                          {spendCategories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                      )
+                    ) : transaction.transferGroup ? (
+                      "Transfer"
+                    ) : transaction.splits.length ? (
+                      `Split (${transaction.splits.length})`
+                    ) : (
+                      transaction.category?.name ?? "Inflow"
+                    )}
+                  </td>
+                  <td>
+                    {editingTransactionId === transaction.id ? (
+                      <div className="grid">
+                        <select
+                          value={editDirection}
+                          onChange={(event) => setEditDirection(event.target.value as "expense" | "income")}
+                        >
+                          <option value="expense">Expense</option>
+                          <option value="income">Income</option>
+                        </select>
+                        <input value={editAmount} onChange={(event) => setEditAmount(event.target.value)} />
+                      </div>
+                    ) : (
+                      formatUsdMoney(transaction.amount, currency, usdRateMap)
+                    )}
+                  </td>
+                  <td>
+                    <div className="inline-row">
+                      {editingTransactionId === transaction.id ? (
+                        <>
+                          <button type="button" onClick={saveEditingTransaction}>
+                            Save
+                          </button>
+                          <button type="button" className="secondary" onClick={cancelEditing}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => startEditing(transaction)}
+                          disabled={!isEditableTransaction(transaction)}
+                          title={
+                            isEditableTransaction(transaction)
+                              ? "Edit transaction"
+                              : "Transfer and split transactions must be deleted and recreated"
+                          }
+                        >
+                          Edit
+                        </button>
+                      )}
+                      <button type="button" className="secondary" onClick={() => deleteTransaction(transaction.id)}>
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -107,3 +107,22 @@ export async function PATCH(request: Request) {
 
   return NextResponse.json({ rule });
 }
+
+export async function DELETE(request: Request) {
+  const { user, response } = await requireApiUser();
+  if (!user) return response!;
+
+  const url = new URL(request.url);
+  const id = url.searchParams.get("id");
+  if (!id) {
+    return badRequest("Missing recurring rule id");
+  }
+
+  const existing = await prisma.recurringRule.findUnique({ where: { id } });
+  if (!existing || existing.userId !== user.id) {
+    return NextResponse.json({ error: "Recurring rule not found" }, { status: 404 });
+  }
+
+  await prisma.recurringRule.delete({ where: { id } });
+  return NextResponse.json({ deleted: true, id });
+}

@@ -33,9 +33,11 @@ export default async function TransactionsPage() {
     payee: row.payee,
     memo: row.memo,
     amount: row.amount,
+    status: row.status,
     transferGroup: row.transferGroup,
-    account: { name: row.account.name },
-    category: row.category ? { name: row.category.name } : null,
+    account: { id: row.account.id, name: row.account.name },
+    categoryId: row.categoryId,
+    category: row.category ? { id: row.category.id, name: row.category.name } : null,
     splits: row.splits.map((split) => ({
       id: split.id,
       amount: split.amount,

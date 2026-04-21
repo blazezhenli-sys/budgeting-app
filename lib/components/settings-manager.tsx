@@ -138,6 +138,26 @@ export function SettingsManager({
     setRuleList((previous) => previous.map((rule) => (rule.id === id ? { ...rule, active: payload.rule.active } : rule)));
   }
 
+  async function deleteRule(id: string) {
+    if (!confirm("Delete this recurring rule? Existing generated transactions will remain.")) {
+      return;
+    }
+    setError(null);
+
+    const response = await fetch(`/api/recurring/rules?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? "Failed to delete rule");
+      return;
+    }
+
+    setRuleList((previous) => previous.filter((rule) => rule.id !== id));
+    setQueue((previous) => previous.filter((item) => item.ruleId !== id));
+    setSelectedQueueRuleIds((previous) => previous.filter((ruleId) => ruleId !== id));
+  }
+
   async function runRecurringNow() {
     const uniqueRuleIds = [...new Set(selectedQueueRuleIds)];
     if (!uniqueRuleIds.length) {
@@ -283,9 +303,14 @@ export function SettingsManager({
                   <td>{formatDateOnly(rule.nextRunDate)}</td>
                   <td>{rule.active ? "Active" : "Paused"}</td>
                   <td>
-                    <button type="button" className="secondary" onClick={() => toggleRule(rule.id, rule.active)}>
-                      {rule.active ? "Pause" : "Resume"}
-                    </button>
+                    <div className="inline-row">
+                      <button type="button" className="secondary" onClick={() => toggleRule(rule.id, rule.active)}>
+                        {rule.active ? "Pause" : "Resume"}
+                      </button>
+                      <button type="button" className="secondary" onClick={() => deleteRule(rule.id)}>
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
