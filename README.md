@@ -5,7 +5,7 @@ A desktop-first personal budgeting app built with Next.js + Postgres + Prisma.
 ## What it covers in v1
 - Single-user email/password login
 - Cash/checking/savings account tracking
-- Category groups + categories
+- Groups + categories
 - Monthly envelope budgeting with rollover behavior
 - Month close/reopen lock
 - Transaction ledger with transfer support

@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   if (body.kind === "group") {
     const payload = categoryGroupSchema.safeParse(body);
     if (!payload.success) {
-      return badRequest("Invalid category group payload");
+      return badRequest("Invalid group payload");
     }
 
     const group = await prisma.categoryGroup.create({
@@ -52,6 +52,14 @@ export async function POST(request: Request) {
   const payload = categorySchema.safeParse(body);
   if (!payload.success) {
     return badRequest("Invalid category payload");
+  }
+
+  const targetGroup = await prisma.categoryGroup.findFirst({
+    where: { id: payload.data.groupId, userId: user.id },
+    select: { id: true },
+  });
+  if (!targetGroup) {
+    return NextResponse.json({ error: "Destination group not found" }, { status: 404 });
   }
 
   const category = await prisma.category.create({
@@ -76,14 +84,14 @@ export async function PATCH(request: Request) {
   if (body.kind === "group") {
     const payload = categoryGroupSchema.extend({ id: categoryPatchSchema.shape.id }).safeParse(body);
     if (!payload.success) {
-      return badRequest("Invalid category group patch payload");
+      return badRequest("Invalid group patch payload");
     }
 
     const existingGroup = await prisma.categoryGroup.findFirst({
       where: { id: payload.data.id, userId: user.id },
     });
     if (!existingGroup) {
-      return NextResponse.json({ error: "Category group not found" }, { status: 404 });
+      return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
 
     const group = await prisma.categoryGroup.update({
@@ -116,6 +124,16 @@ export async function PATCH(request: Request) {
     );
   }
 
+  if (payload.data.groupId !== undefined && payload.data.groupId !== existingCategory.groupId) {
+    const targetGroup = await prisma.categoryGroup.findFirst({
+      where: { id: payload.data.groupId, userId: user.id },
+      select: { id: true },
+    });
+    if (!targetGroup) {
+      return NextResponse.json({ error: "Destination group not found" }, { status: 404 });
+    }
+  }
+
   const category = await prisma.category.update({
     where: { id: payload.data.id },
     data: {
@@ -146,7 +164,7 @@ export async function DELETE(request: Request) {
       where: { id, userId: user.id },
     });
     if (!existingGroup) {
-      return NextResponse.json({ error: "Category group not found" }, { status: 404 });
+      return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
 
     const categoryCount = await prisma.category.count({
@@ -156,7 +174,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Cannot delete a group that still has categories. Move or delete categories first.",
+            "Cannot delete a group that still has categories. Move categories to another group or delete them first.",
         },
         { status: 409 },
       );

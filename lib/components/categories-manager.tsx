@@ -27,6 +27,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       ]),
     ),
   );
+  const [movingCategoryIds, setMovingCategoryIds] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
   const grouped = useMemo(
@@ -156,6 +157,44 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     }));
   }
 
+  async function moveCategory(category: Category, nextGroupId: string) {
+    if (category.groupId === nextGroupId) {
+      return;
+    }
+
+    setError(null);
+    const previousGroupId = category.groupId;
+    setMovingCategoryIds((previous) => ({ ...previous, [category.id]: true }));
+    setCategories((previous) =>
+      previous.map((item) =>
+        item.id === category.id ? { ...item, groupId: nextGroupId } : item,
+      ),
+    );
+
+    const response = await fetch("/api/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: category.id, groupId: nextGroupId }),
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setCategories((previous) =>
+        previous.map((item) =>
+          item.id === category.id ? { ...item, groupId: previousGroupId } : item,
+        ),
+      );
+      setError(payload.error ?? "Failed to move category");
+      setMovingCategoryIds((previous) => ({ ...previous, [category.id]: false }));
+      return;
+    }
+
+    setCategories((previous) =>
+      previous.map((item) => (item.id === category.id ? payload.category : item)),
+    );
+    setMovingCategoryIds((previous) => ({ ...previous, [category.id]: false }));
+  }
+
   async function deleteGroup(groupIdToDelete: string) {
     setError(null);
     const response = await fetch(
@@ -164,7 +203,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     );
     const payload = await response.json();
     if (!response.ok) {
-      setError(payload.error ?? "Failed to delete category group");
+      setError(payload.error ?? "Failed to delete group");
       return;
     }
 
@@ -180,7 +219,8 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
   return (
     <div className="grid two">
       <section className="card">
-        <h2>Create category group</h2>
+        <h2>Create group</h2>
+        <p className="muted">Groups are headings that organize multiple categories.</p>
         <form onSubmit={createGroup}>
           <label>
             Group name
@@ -190,6 +230,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
         </form>
 
         <h2 style={{ marginTop: "1rem" }}>Create category</h2>
+        <p className="muted">Categories are individual budget lines inside a group.</p>
         <form onSubmit={createCategory}>
           <label>
             Group
@@ -220,7 +261,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       </section>
 
       <section className="card">
-        <h2>Categories</h2>
+        <h2>Categories by group</h2>
         {grouped.map((group) => (
           <div key={group.id} className="category-group-block">
             <div className="inline-row category-group-header">
@@ -229,7 +270,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                 type="button"
                 className="secondary"
                 onClick={() => {
-                  if (confirm(`Delete group \"${group.name}\"? This only works if the group has no categories.`)) {
+                  if (confirm(`Delete group "${group.name}"? This only works if the group has no categories.`)) {
                     void deleteGroup(group.id);
                   }
                 }}
@@ -238,52 +279,80 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
               </button>
             </div>
             <ul className="category-list">
-              {group.categories.map((category) => (
-                <li key={category.id} className="category-item">
-                  <div className="category-main">
-                    <span className="category-name">
-                      {category.name}
-                      {category.specialType === "INFLOW" ? " (System)" : ""}
-                    </span>
-                    {category.specialType === "INFLOW" ? null : (
-                      <div className="category-target">
-                        <input
-                          value={targetDrafts[category.id] ?? ""}
-                          onChange={(event) =>
-                            setTargetDrafts((previous) => ({
-                              ...previous,
-                              [category.id]: event.target.value,
-                            }))
-                          }
-                          className="category-target-input"
-                          aria-label={`Target for ${category.name}`}
-                          placeholder={`Target (${currency})`}
-                        />
-                        <button type="button" className="secondary" onClick={() => saveTarget(category)}>
-                          Save target
-                        </button>
+              {group.categories.length ? (
+                group.categories.map((category) => {
+                  const isMoving = movingCategoryIds[category.id] ?? false;
+                  return (
+                    <li key={category.id} className="category-item">
+                      <div className="category-main">
+                        <span className="category-name">
+                          {category.name}
+                          {category.specialType === "INFLOW" ? " (System)" : ""}
+                        </span>
+                        {category.specialType === "INFLOW" ? null : (
+                          <div className="category-target">
+                            <input
+                              value={targetDrafts[category.id] ?? ""}
+                              onChange={(event) =>
+                                setTargetDrafts((previous) => ({
+                                  ...previous,
+                                  [category.id]: event.target.value,
+                                }))
+                              }
+                              className="category-target-input"
+                              aria-label={`Target for ${category.name}`}
+                              placeholder={`Target (${currency})`}
+                            />
+                            <button type="button" className="secondary" onClick={() => saveTarget(category)} disabled={isMoving}>
+                              Save target
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="category-actions">
-                    {category.specialType === "INFLOW" ? (
-                      <span className="muted">Locked</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          if (confirm(`Delete category \"${category.name}\"?`)) {
-                            void deleteCategory(category.id);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
+                      <div className="category-actions">
+                        {category.specialType === "INFLOW" ? (
+                          <span className="muted">Locked</span>
+                        ) : (
+                          <>
+                            <label className="category-move-label">
+                              Group
+                              <select
+                                value={category.groupId}
+                                onChange={(event) => {
+                                  void moveCategory(category, event.target.value);
+                                }}
+                                aria-label={`Move ${category.name} to group`}
+                                className="category-move-select"
+                                disabled={isMoving}
+                              >
+                                {groups.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                if (confirm(`Delete category "${category.name}"?`)) {
+                                  void deleteCategory(category.id);
+                                }
+                              }}
+                              disabled={isMoving}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })
+              ) : (
+                <li className="muted">No categories in this group yet.</li>
+              )}
             </ul>
           </div>
         ))}

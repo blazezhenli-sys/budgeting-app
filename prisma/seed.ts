@@ -525,7 +525,7 @@ async function main() {
   const groupByName = await ensureDefaultGroups(user.id);
   const systemGroup = groupByName.get("System");
   if (!systemGroup) {
-    throw new Error("System category group is missing after seeding.");
+    throw new Error("System group is missing after seeding.");
   }
 
   await ensureInflowCategory(user.id, systemGroup.id);

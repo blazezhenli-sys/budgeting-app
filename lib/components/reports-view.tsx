@@ -347,7 +347,7 @@ export function ReportsView({
         ) : null}
         {report.spendingByGroup.length ? (
           <div className="grid">
-            <h3>By category group</h3>
+            <h3>By group</h3>
             {report.spendingByGroup.map((group) => (
               <div key={group.groupName} className="report-breakdown-row">
                 <div className="inline-row report-breakdown-header">

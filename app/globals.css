@@ -309,7 +309,21 @@ th {
 
 .category-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.category-move-label {
+  display: grid;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.category-move-select {
+  min-width: 140px;
 }
 
 .report-trend-chart {
@@ -656,5 +670,10 @@ th {
 
   .category-actions {
     justify-content: flex-start;
+  }
+
+  .category-move-select {
+    width: 100%;
+    min-width: 0;
   }
 }
