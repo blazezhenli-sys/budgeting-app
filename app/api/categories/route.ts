@@ -5,6 +5,18 @@ import { badRequest, requireApiUser } from "@/lib/server/api";
 import { ensureInflowCategory } from "@/lib/server/inflow";
 import { categoryGroupSchema, categoryPatchSchema, categorySchema } from "@/lib/validation/schemas";
 
+async function isSystemGroup(userId: string, groupId: string): Promise<boolean> {
+  const systemCategory = await prisma.category.findFirst({
+    where: {
+      userId,
+      groupId,
+      specialType: { not: null },
+    },
+    select: { id: true },
+  });
+  return Boolean(systemCategory);
+}
+
 export async function GET() {
   const { user, response } = await requireApiUser();
   if (!user) return response!;
@@ -61,6 +73,9 @@ export async function POST(request: Request) {
   if (!targetGroup) {
     return NextResponse.json({ error: "Destination group not found" }, { status: 404 });
   }
+  if (await isSystemGroup(user.id, payload.data.groupId)) {
+    return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
+  }
 
   const category = await prisma.category.create({
     data: {
@@ -93,6 +108,9 @@ export async function PATCH(request: Request) {
     if (!existingGroup) {
       return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
+    if (await isSystemGroup(user.id, payload.data.id)) {
+      return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
+    }
 
     const group = await prisma.categoryGroup.update({
       where: { id: payload.data.id },
@@ -123,6 +141,9 @@ export async function PATCH(request: Request) {
       { status: 409 },
     );
   }
+  if (await isSystemGroup(user.id, existingCategory.groupId)) {
+    return NextResponse.json({ error: "Categories in the system group are read-only." }, { status: 409 });
+  }
 
   if (payload.data.groupId !== undefined && payload.data.groupId !== existingCategory.groupId) {
     const targetGroup = await prisma.categoryGroup.findFirst({
@@ -131,6 +152,9 @@ export async function PATCH(request: Request) {
     });
     if (!targetGroup) {
       return NextResponse.json({ error: "Destination group not found" }, { status: 404 });
+    }
+    if (await isSystemGroup(user.id, payload.data.groupId)) {
+      return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
     }
   }
 
@@ -166,6 +190,9 @@ export async function DELETE(request: Request) {
     if (!existingGroup) {
       return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
+    if (await isSystemGroup(user.id, id)) {
+      return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
+    }
 
     const categoryCount = await prisma.category.count({
       where: { userId: user.id, groupId: id },
@@ -195,6 +222,9 @@ export async function DELETE(request: Request) {
       { error: "Inflow category is system-managed and cannot be deleted." },
       { status: 409 },
     );
+  }
+  if (await isSystemGroup(user.id, existingCategory.groupId)) {
+    return NextResponse.json({ error: "Categories in the system group are read-only." }, { status: 409 });
   }
 
   const deletedBudgets = await prisma.categoryBudget.deleteMany({

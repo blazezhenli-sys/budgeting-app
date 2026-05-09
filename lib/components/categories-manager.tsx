@@ -13,12 +13,19 @@ type Props = {
 };
 
 export function CategoriesManager({ initialGroups, initialCategories, currency, usdRateMap }: Props) {
+  const initialSystemGroupIds = new Set(
+    initialCategories
+      .filter((category) => category.specialType !== null)
+      .map((category) => category.groupId),
+  );
+  const initialGroupId = initialGroups.find((group) => !initialSystemGroupIds.has(group.id))?.id ?? "";
+
   const [groups, setGroups] = useState(initialGroups);
   const [categories, setCategories] = useState(initialCategories);
   const [groupName, setGroupName] = useState("");
   const [categoryName, setCategoryName] = useState("");
   const [categoryTarget, setCategoryTarget] = useState("");
-  const [groupId, setGroupId] = useState(initialGroups[0]?.id ?? "");
+  const [groupId, setGroupId] = useState(initialGroupId);
   const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>(
     Object.fromEntries(
       initialCategories.map((category) => [
@@ -30,13 +37,33 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
   const [movingCategoryIds, setMovingCategoryIds] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
+  const systemGroupIds = useMemo(
+    () =>
+      new Set(
+        categories
+          .filter((category) => category.specialType !== null)
+          .map((category) => category.groupId),
+      ),
+    [categories],
+  );
+  const editableGroups = useMemo(
+    () =>
+      groups
+        .filter((group) => !systemGroupIds.has(group.id))
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+    [groups, systemGroupIds],
+  );
+  const editableCategories = useMemo(
+    () => categories.filter((category) => !systemGroupIds.has(category.groupId)),
+    [categories, systemGroupIds],
+  );
   const grouped = useMemo(
     () =>
-      groups.map((group) => ({
+      editableGroups.map((group) => ({
         ...group,
-        categories: categories.filter((category) => category.groupId === group.id),
+        categories: editableCategories.filter((category) => category.groupId === group.id),
       })),
-    [groups, categories],
+    [editableCategories, editableGroups],
   );
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
@@ -46,7 +73,11 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     const response = await fetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "group", name: groupName, sortOrder: groups.length + 1 }),
+      body: JSON.stringify({
+        kind: "group",
+        name: groupName,
+        sortOrder: Math.max(0, ...groups.map((group) => group.sortOrder)) + 1,
+      }),
     });
 
     const payload = await response.json();
@@ -210,10 +241,73 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     setGroups((previous) => {
       const nextGroups = previous.filter((group) => group.id !== groupIdToDelete);
       if (groupId === groupIdToDelete) {
-        setGroupId(nextGroups[0]?.id ?? "");
+        const nextEditableGroup = nextGroups.find((group) => !systemGroupIds.has(group.id));
+        setGroupId(nextEditableGroup?.id ?? "");
       }
       return nextGroups;
     });
+  }
+
+  async function moveGroup(groupToMove: CategoryGroup, direction: "up" | "down") {
+    const currentIndex = editableGroups.findIndex((group) => group.id === groupToMove.id);
+    if (currentIndex === -1) return;
+    const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= editableGroups.length) return;
+
+    const neighborGroup = editableGroups[nextIndex];
+    const moveSortOrder = groupToMove.sortOrder;
+    const neighborSortOrder = neighborGroup.sortOrder;
+
+    setError(null);
+    setGroups((previous) =>
+      previous.map((group) => {
+        if (group.id === groupToMove.id) return { ...group, sortOrder: neighborSortOrder };
+        if (group.id === neighborGroup.id) return { ...group, sortOrder: moveSortOrder };
+        return group;
+      }),
+    );
+
+    const [moveResponse, neighborResponse] = await Promise.all([
+      fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "group",
+          id: groupToMove.id,
+          name: groupToMove.name,
+          sortOrder: neighborSortOrder,
+          archived: groupToMove.archived,
+        }),
+      }),
+      fetch("/api/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "group",
+          id: neighborGroup.id,
+          name: neighborGroup.name,
+          sortOrder: moveSortOrder,
+          archived: neighborGroup.archived,
+        }),
+      }),
+    ]);
+
+    if (!moveResponse.ok || !neighborResponse.ok) {
+      const movePayload = await moveResponse.json().catch(() => ({}));
+      const neighborPayload = await neighborResponse.json().catch(() => ({}));
+      setGroups((previous) =>
+        previous.map((group) => {
+          if (group.id === groupToMove.id) return { ...group, sortOrder: moveSortOrder };
+          if (group.id === neighborGroup.id) return { ...group, sortOrder: neighborSortOrder };
+          return group;
+        }),
+      );
+      setError(
+        movePayload.error ??
+          neighborPayload.error ??
+          "Failed to reorder groups",
+      );
+    }
   }
 
   return (
@@ -234,8 +328,8 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
         <form onSubmit={createCategory}>
           <label>
             Group
-            <select value={groupId} onChange={(event) => setGroupId(event.target.value)} required disabled={!groups.length}>
-              {groups.map((group) => (
+            <select value={groupId} onChange={(event) => setGroupId(event.target.value)} required disabled={!editableGroups.length}>
+              {editableGroups.map((group) => (
                 <option key={group.id} value={group.id}>
                   {group.name}
                 </option>
@@ -244,7 +338,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
           </label>
           <label>
             Category name
-            <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required disabled={!groups.length} />
+            <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} required disabled={!editableGroups.length} />
           </label>
           <label>
             Monthly target ({currency})
@@ -252,31 +346,54 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
               value={categoryTarget}
               onChange={(event) => setCategoryTarget(event.target.value)}
               placeholder="Optional"
-              disabled={!groups.length}
+              disabled={!editableGroups.length}
             />
           </label>
           {error ? <p className="alert">{error}</p> : null}
-          <button type="submit" disabled={!groups.length}>Add category</button>
+          <button type="submit" disabled={!editableGroups.length}>Add category</button>
         </form>
       </section>
 
       <section className="card">
         <h2>Categories by group</h2>
+        {!editableGroups.length ? <p className="muted">No editable groups yet.</p> : null}
         {grouped.map((group) => (
           <div key={group.id} className="category-group-block">
             <div className="inline-row category-group-header">
               <h3>{group.name}</h3>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  if (confirm(`Delete group "${group.name}"? This only works if the group has no categories.`)) {
-                    void deleteGroup(group.id);
-                  }
-                }}
-              >
-                Delete group
-              </button>
+              <div className="inline-row">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    void moveGroup(group, "up");
+                  }}
+                  disabled={editableGroups[0]?.id === group.id}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    void moveGroup(group, "down");
+                  }}
+                  disabled={editableGroups[editableGroups.length - 1]?.id === group.id}
+                >
+                  Move down
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    if (confirm(`Delete group "${group.name}"? This only works if the group has no categories.`)) {
+                      void deleteGroup(group.id);
+                    }
+                  }}
+                >
+                  Delete group
+                </button>
+              </div>
             </div>
             <ul className="category-list">
               {group.categories.length ? (
@@ -325,7 +442,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                                 className="category-move-select"
                                 disabled={isMoving}
                               >
-                                {groups.map((item) => (
+                                {editableGroups.map((item) => (
                                   <option key={item.id} value={item.id}>
                                     {item.name}
                                   </option>
