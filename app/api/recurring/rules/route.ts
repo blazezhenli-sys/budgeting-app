@@ -2,6 +2,27 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { badRequest, requireApiUser } from "@/lib/server/api";
+import { normalizeRecurringAmount } from "@/lib/server/recurring";
+
+async function findRecurringCategory(userId: string, categoryId?: string | null) {
+  if (!categoryId) {
+    return null;
+  }
+
+  return prisma.category.findFirst({
+    where: { id: categoryId, userId },
+    select: { id: true, specialType: true },
+  });
+}
+
+function serializeRuleAmount<T extends { amount: number; categoryId: string | null; category?: { specialType: string | null } | null }>(
+  rule: T,
+) {
+  return {
+    ...rule,
+    amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
+  };
+}
 
 export async function GET() {
   const { user, response } = await requireApiUser();
@@ -13,7 +34,7 @@ export async function GET() {
     orderBy: { nextRunDate: "asc" },
   });
 
-  return NextResponse.json({ rules });
+  return NextResponse.json({ rules: rules.map((rule) => serializeRuleAmount(rule)) });
 }
 
 export async function POST(request: Request) {
@@ -41,6 +62,11 @@ export async function POST(request: Request) {
     return badRequest("Invalid nextRunDate");
   }
 
+  const category = await findRecurringCategory(user.id, body.categoryId);
+  if (body.categoryId && !category) {
+    return badRequest("Category not found");
+  }
+
   const rule = await prisma.recurringRule.create({
     data: {
       userId: user.id,
@@ -48,15 +74,16 @@ export async function POST(request: Request) {
       categoryId: body.categoryId,
       payee: body.payee,
       memo: body.memo,
-      amount: body.amount,
+      amount: normalizeRecurringAmount(body.amount, body.categoryId, category?.specialType ?? null),
       status: body.status ?? "UNCLEARED",
       frequency: body.frequency,
       nextRunDate,
       active: body.active ?? true,
     },
+    include: { account: true, category: true },
   });
 
-  return NextResponse.json({ rule }, { status: 201 });
+  return NextResponse.json({ rule: serializeRuleAmount(rule) }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {
@@ -90,6 +117,12 @@ export async function PATCH(request: Request) {
     return badRequest("Invalid nextRunDate");
   }
 
+  const effectiveCategoryId = body.categoryId !== undefined ? body.categoryId : existing.categoryId;
+  const category = await findRecurringCategory(user.id, effectiveCategoryId);
+  if (effectiveCategoryId && !category) {
+    return badRequest("Category not found");
+  }
+
   const rule = await prisma.recurringRule.update({
     where: { id: body.id },
     data: {
@@ -97,15 +130,24 @@ export async function PATCH(request: Request) {
       ...(body.categoryId !== undefined ? { categoryId: body.categoryId } : {}),
       ...(body.payee !== undefined ? { payee: body.payee } : {}),
       ...(body.memo !== undefined ? { memo: body.memo } : {}),
-      ...(body.amount !== undefined ? { amount: body.amount } : {}),
+      ...(body.amount !== undefined || body.categoryId !== undefined
+        ? {
+            amount: normalizeRecurringAmount(
+              body.amount ?? existing.amount,
+              effectiveCategoryId,
+              category?.specialType ?? null,
+            ),
+          }
+        : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
       ...(body.frequency !== undefined ? { frequency: body.frequency } : {}),
       ...(nextRunDate ? { nextRunDate } : {}),
       ...(body.active !== undefined ? { active: body.active } : {}),
     },
+    include: { account: true, category: true },
   });
 
-  return NextResponse.json({ rule });
+  return NextResponse.json({ rule: serializeRuleAmount(rule) });
 }
 
 export async function DELETE(request: Request) {

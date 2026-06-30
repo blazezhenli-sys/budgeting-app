@@ -15,7 +15,8 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:history": "tsx prisma/seed.ts --history",
-    "db:seed:history:force": "tsx prisma/seed.ts --history --force-history"
+    "db:seed:history:force": "tsx prisma/seed.ts --history --force-history",
+    "db:repair:recurring-signs": "tsx scripts/repair-recurring-signs.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",

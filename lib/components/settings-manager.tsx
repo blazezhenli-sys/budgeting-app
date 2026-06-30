@@ -256,6 +256,9 @@ export function SettingsManager({
             Amount ({currency})
             <input value={ruleAmount} onChange={(event) => setRuleAmount(event.target.value)} required />
           </label>
+          <p className="muted">
+            Expense categories generate outflows automatically. Choose the Inflow category for recurring income.
+          </p>
           <label>
             Frequency
             <select value={ruleFrequency} onChange={(event) => setRuleFrequency(event.target.value as typeof ruleFrequency)}>

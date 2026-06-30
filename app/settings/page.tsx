@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { todayInTimeZone } from "@/lib/date";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { listRecurringQueue } from "@/lib/server/recurring";
+import { listRecurringQueue, normalizeRecurringAmount } from "@/lib/server/recurring";
 import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 
 export default async function SettingsPage() {
@@ -23,13 +23,17 @@ export default async function SettingsPage() {
   ]);
   const initialRuleDate = todayInTimeZone(settings.timezone);
   const usdRateMap = usdRateMapFromSettings(settings);
+  const normalizedRules = rules.map((rule) => ({
+    ...rule,
+    amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
+  }));
 
   return (
     <div className="grid">
       <h1>Settings & Recurring</h1>
       <SettingsManager
         initialSettings={settings}
-        rules={rules}
+        rules={normalizedRules}
         accounts={accounts}
         categories={categories}
         initialQueue={queue}

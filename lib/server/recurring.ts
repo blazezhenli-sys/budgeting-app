@@ -11,6 +11,20 @@ export function nextRecurringDate(date: Date, frequency: RecurringFrequency): Da
   return addMonths(date, 1);
 }
 
+export function normalizeRecurringAmount(
+  amount: number,
+  categoryId?: string | null,
+  categorySpecialType?: string | null,
+): number {
+  const absoluteAmount = Math.abs(amount);
+
+  if (!categoryId || categorySpecialType === "INFLOW") {
+    return absoluteAmount;
+  }
+
+  return absoluteAmount * -1;
+}
+
 export async function generateRecurringTransactions(
   userId: string,
   throughDateInput?: string,
@@ -25,6 +39,13 @@ export async function generateRecurringTransactions(
       active: true,
       nextRunDate: { lte: throughDate },
       ...(limitedRuleIds ? { id: { in: limitedRuleIds } } : {}),
+    },
+    include: {
+      category: {
+        select: {
+          specialType: true,
+        },
+      },
     },
     orderBy: {
       nextRunDate: "asc",
@@ -69,7 +90,7 @@ export async function generateRecurringTransactions(
               date: nextDate,
               payee: rule.payee,
               memo: rule.memo,
-              amount: rule.amount,
+              amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
               status: rule.status,
             },
           });
@@ -137,7 +158,7 @@ export async function listRecurringQueue(userId: string, throughDateInput?: stri
     .map((rule) => ({
       ruleId: rule.id,
       payee: rule.payee,
-      amount: rule.amount,
+      amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
       frequency: rule.frequency,
       nextRunDate: rule.nextRunDate.toISOString().slice(0, 10),
       account: { id: rule.account.id, name: rule.account.name },
