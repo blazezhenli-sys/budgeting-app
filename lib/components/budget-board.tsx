@@ -223,11 +223,9 @@ export function BudgetBoard({
       return;
     }
     if (!row.targetMonthly || row.targetMonthly <= 0) return;
+    if (row.assigned === row.targetMonthly) return;
 
-    const needed = Math.max(row.targetMonthly - row.available, 0);
-    if (needed <= 0) return;
-
-    await saveAssignment(row.categoryId, usdCentsToDisplayInput(row.assigned + needed, currency, usdRateMap));
+    await saveAssignment(row.categoryId, usdCentsToDisplayInput(row.targetMonthly, currency, usdRateMap));
   }
 
   return (
