@@ -475,7 +475,7 @@ export function TransactionsManager({
       </section>
 
       <section className="card">
-        <h2>Recent transactions</h2>
+        <h2>Transactions</h2>
         <div className="table-scroll">
           <table>
             <thead>

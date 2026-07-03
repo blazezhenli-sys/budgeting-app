@@ -22,7 +22,6 @@ export default async function TransactionsPage() {
         },
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-      take: 200,
     }),
     ensureSettings(user.id),
   ]);
