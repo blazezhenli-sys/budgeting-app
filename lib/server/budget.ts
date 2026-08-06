@@ -24,6 +24,14 @@ export function availableToAssign(
   return incomeBefore + incomeCurrent - assignedBefore - assignedCurrent;
 }
 
+export function coverOverspendingTransferAmount(overspentAvailable: number, sourceAvailable: number): number {
+  if (overspentAvailable >= 0 || sourceAvailable <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.abs(overspentAvailable), sourceAvailable);
+}
+
 export async function ensureBudgetMonth(userId: string, month: MonthKey) {
   return prisma.budgetMonth.upsert({
     where: {
@@ -379,7 +387,7 @@ export async function quickFundMonthlyTargets(userId: string, month: MonthKey) {
       continue;
     }
 
-    const needed = Math.max(row.targetMonthly - row.available, 0);
+    const needed = Math.max(row.targetMonthly - row.assigned, 0);
     if (needed <= 0) {
       continue;
     }
@@ -413,6 +421,57 @@ export async function quickFundMonthlyTargets(userId: string, month: MonthKey) {
   return {
     fundedCount: updates.length,
     fundedAmount,
+    budget: updatedBudget,
+  };
+}
+
+export async function coverOverspendingFromCategory(
+  userId: string,
+  month: MonthKey,
+  overspentCategoryId: string,
+  sourceCategoryId: string,
+) {
+  if (overspentCategoryId === sourceCategoryId) {
+    throw new Error("Choose a different category to cover overspending from");
+  }
+
+  const budget = await getBudgetMonthView(userId, month);
+  if (budget.status === "CLOSED") {
+    throw new Error("This month is closed. Reopen it before covering overspending.");
+  }
+
+  const overspentRow = budget.categories.find((row) => row.categoryId === overspentCategoryId);
+  if (!overspentRow) {
+    throw new Error("Overspent category not found");
+  }
+  if (!overspentRow.overspent) {
+    throw new Error("Selected category is not overspent");
+  }
+
+  const sourceRow = budget.categories.find((row) => row.categoryId === sourceCategoryId);
+  if (!sourceRow) {
+    throw new Error("Source category not found");
+  }
+
+  const coveredAmount = coverOverspendingTransferAmount(overspentRow.available, sourceRow.available);
+  if (coveredAmount <= 0) {
+    throw new Error("Source category has no available funds to move");
+  }
+
+  const updatedBudget = await upsertBudgetAssignments(userId, month, [
+    {
+      categoryId: overspentRow.categoryId,
+      assigned: overspentRow.assigned + coveredAmount,
+    },
+    {
+      categoryId: sourceRow.categoryId,
+      assigned: sourceRow.assigned - coveredAmount,
+    },
+  ]);
+
+  return {
+    coveredAmount,
+    fullyCovered: coveredAmount >= Math.abs(overspentRow.available),
     budget: updatedBudget,
   };
 }

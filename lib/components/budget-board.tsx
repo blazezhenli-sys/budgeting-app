@@ -34,6 +34,34 @@ function buildAssignmentDrafts(
   );
 }
 
+function eligibleCoverSources(
+  categories: BudgetMonthView["categories"],
+  overspentCategoryId: string,
+): BudgetMonthView["categories"] {
+  return categories.filter((row) => row.categoryId !== overspentCategoryId && row.available > 0);
+}
+
+function buildCoverSourceDrafts(
+  categories: BudgetMonthView["categories"],
+  previous: Record<string, string> = {},
+): Record<string, string> {
+  const next: Record<string, string> = {};
+
+  for (const row of categories) {
+    if (!row.overspent) {
+      continue;
+    }
+
+    const eligible = eligibleCoverSources(categories, row.categoryId);
+    const preserved = previous[row.categoryId];
+    next[row.categoryId] = eligible.some((candidate) => candidate.categoryId === preserved)
+      ? preserved
+      : (eligible[0]?.categoryId ?? "");
+  }
+
+  return next;
+}
+
 export function BudgetBoard({
   month,
   currency,
@@ -49,6 +77,9 @@ export function BudgetBoard({
   const [budget, setBudget] = useState(initialBudget);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<string, string>>(
     buildAssignmentDrafts(initialBudget.categories, currency, usdRateMap),
+  );
+  const [coverSourceDrafts, setCoverSourceDrafts] = useState<Record<string, string>>(
+    buildCoverSourceDrafts(initialBudget.categories),
   );
   const [errors, setErrors] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -72,6 +103,12 @@ export function BudgetBoard({
     }
     return [...grouped.entries()];
   }, [budget]);
+
+  function applyBudgetUpdate(nextBudget: BudgetMonthView) {
+    setBudget(nextBudget);
+    setAssignmentDrafts(buildAssignmentDrafts(nextBudget.categories, currency, usdRateMap));
+    setCoverSourceDrafts((previous) => buildCoverSourceDrafts(nextBudget.categories, previous));
+  }
 
   async function saveAssignment(categoryId: string, assignedDisplayAmount: string) {
     if (budget.status === "CLOSED") {
@@ -112,8 +149,7 @@ export function BudgetBoard({
       return;
     }
 
-    setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
+    applyBudgetUpdate(payload.budget);
   }
 
   function onAssignmentKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -189,8 +225,7 @@ export function BudgetBoard({
       return;
     }
 
-    setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
+    applyBudgetUpdate(payload.budget);
   }
 
   async function fundAllTargets() {
@@ -213,8 +248,7 @@ export function BudgetBoard({
       return;
     }
 
-    setBudget(payload.budget);
-    setAssignmentDrafts(buildAssignmentDrafts(payload.budget.categories, currency, usdRateMap));
+    applyBudgetUpdate(payload.budget);
   }
 
   async function fundRowToTarget(row: BudgetMonthView["categories"][number]) {
@@ -226,6 +260,39 @@ export function BudgetBoard({
     if (row.assigned === row.targetMonthly) return;
 
     await saveAssignment(row.categoryId, usdCentsToDisplayInput(row.targetMonthly, currency, usdRateMap));
+  }
+
+  async function coverOverspending(row: BudgetMonthView["categories"][number]) {
+    if (budget.status === "CLOSED") {
+      setErrors("This month is closed.");
+      return;
+    }
+
+    const sourceCategoryId = coverSourceDrafts[row.categoryId];
+    if (!sourceCategoryId) {
+      setErrors("Choose a source category with available funds.");
+      return;
+    }
+
+    setErrors(null);
+    setWorking(true);
+    const response = await fetch(`/api/budget/${month}/cover-overspending`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        month,
+        overspentCategoryId: row.categoryId,
+        sourceCategoryId,
+      }),
+    });
+    const payload = await response.json();
+    setWorking(false);
+    if (!response.ok) {
+      setErrors(payload.error ?? "Failed to cover overspending");
+      return;
+    }
+
+    applyBudgetUpdate(payload.budget);
   }
 
   return (
@@ -383,7 +450,52 @@ export function BudgetBoard({
                         </div>
                       </td>
                       <td>{formatUsdMoney(row.activity, currency, usdRateMap)}</td>
-                      <td className={row.overspent ? "badge-danger" : ""}>{formatUsdMoney(row.available, currency, usdRateMap)}</td>
+                      <td>
+                        <div className="grid" style={{ gap: "0.4rem" }}>
+                          <span className={row.overspent ? "badge-danger" : undefined}>
+                            {formatUsdMoney(row.available, currency, usdRateMap)}
+                          </span>
+                          {row.overspent ? (
+                            (() => {
+                              const eligible = eligibleCoverSources(budget.categories, row.categoryId);
+                              return eligible.length ? (
+                                <div className="grid" style={{ gap: "0.35rem" }}>
+                                  <span className="muted">Cover spending from</span>
+                                  <div className="inline-row">
+                                    <select
+                                      value={coverSourceDrafts[row.categoryId] ?? ""}
+                                      onChange={(event) =>
+                                        setCoverSourceDrafts((previous) => ({
+                                          ...previous,
+                                          [row.categoryId]: event.target.value,
+                                        }))
+                                      }
+                                      disabled={budget.status === "CLOSED" || working}
+                                      style={{ minWidth: "170px" }}
+                                    >
+                                      {eligible.map((candidate) => (
+                                        <option key={candidate.categoryId} value={candidate.categoryId}>
+                                          {candidate.categoryName} ({formatUsdMoney(candidate.available, currency, usdRateMap)})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      className="secondary"
+                                      disabled={budget.status === "CLOSED" || working}
+                                      onClick={() => coverOverspending(row)}
+                                    >
+                                      Cover
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="muted">No categories with available funds.</span>
+                              );
+                            })()
+                          ) : null}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </Fragment>
