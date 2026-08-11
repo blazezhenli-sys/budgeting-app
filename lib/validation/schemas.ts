@@ -3,6 +3,7 @@ import { z } from "zod";
 import { DISPLAY_CURRENCIES } from "@/lib/money";
 
 const monthRegex = /^\d{4}-(0[1-9]|1[0-2])$/;
+const dateOnlyRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -94,7 +95,7 @@ export const transactionPatchSchema = z.object({
 });
 
 export const recurringGenerateSchema = z.object({
-  throughDate: z.string().optional(),
+  throughDate: z.string().regex(dateOnlyRegex).optional(),
   ruleIds: z.array(z.string().min(1)).optional(),
 });
 

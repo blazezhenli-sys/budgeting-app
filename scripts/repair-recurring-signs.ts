@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient, type RecurringFrequency, type TransactionStatus } from "@prisma/client";
-import { addMonths, addWeeks, endOfDay, subMonths, subWeeks } from "date-fns";
+import { addMonths, addWeeks, subMonths, subWeeks } from "date-fns";
 
 const prisma = new PrismaClient();
 
@@ -31,6 +31,14 @@ function previousRecurringDate(date: Date, frequency: RecurringFrequency): Date 
 
 function dateKey(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function parseDateOnly(value: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(Number.NaN);
+  }
+
+  return new Date(`${value}T00:00:00.000Z`);
 }
 
 function readFlag(name: string): boolean {
@@ -142,7 +150,9 @@ async function main() {
   const userId = readArgValue("--user-id=");
   const userEmail = readArgValue("--user-email=");
   const throughDateArg = readArgValue("--through-date=");
-  const throughDate = endOfDay(throughDateArg ? new Date(throughDateArg) : new Date());
+  const throughDate = throughDateArg
+    ? parseDateOnly(throughDateArg)
+    : parseDateOnly(new Date().toISOString().slice(0, 10));
 
   if (Number.isNaN(throughDate.getTime())) {
     throw new Error("Invalid --through-date value. Use YYYY-MM-DD.");

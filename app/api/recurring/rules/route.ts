@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { parseDateOnly } from "@/lib/date";
 import { prisma } from "@/lib/db";
 import { badRequest, requireApiUser } from "@/lib/server/api";
 import { normalizeRecurringAmount } from "@/lib/server/recurring";
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     return badRequest("Missing recurring rule fields");
   }
 
-  const nextRunDate = new Date(body.nextRunDate);
+  const nextRunDate = parseDateOnly(body.nextRunDate);
   if (Number.isNaN(nextRunDate.getTime())) {
     return badRequest("Invalid nextRunDate");
   }
@@ -112,7 +113,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Recurring rule not found" }, { status: 404 });
   }
 
-  const nextRunDate = body.nextRunDate ? new Date(body.nextRunDate) : undefined;
+  const nextRunDate = body.nextRunDate ? parseDateOnly(body.nextRunDate) : undefined;
   if (nextRunDate && Number.isNaN(nextRunDate.getTime())) {
     return badRequest("Invalid nextRunDate");
   }

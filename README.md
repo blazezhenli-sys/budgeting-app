@@ -101,6 +101,23 @@ Required CSV columns:
 
 Transfer rows can use memo token format `transfer:token-name` and must appear exactly twice with offsetting amounts.
 
+## Recurring repair
+To dry-run recurring repairs and backfill missing generated recurring transactions:
+
+```bash
+npm run db:repair:recurring
+```
+
+To scope the repair to one user and apply changes:
+
+```bash
+npm run db:repair:recurring -- --user-email=you@example.com --commit
+```
+
+Optional:
+- `--through-date=YYYY-MM-DD` limits backfill through a specific date
+- `--user-id=...` scopes by user id instead of email
+
 ## API surface
 - `POST /api/auth/login`
 - `POST /api/auth/logout`

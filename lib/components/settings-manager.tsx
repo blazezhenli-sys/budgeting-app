@@ -3,6 +3,7 @@
 import { Account, Category, RecurringRule, Setting } from "@prisma/client";
 import { FormEvent, useState } from "react";
 
+import { formatDateOnly as formatStoredDateOnly } from "@/lib/date";
 import {
   DISPLAY_CURRENCIES,
   type DisplayCurrency,
@@ -42,7 +43,7 @@ function formatDateOnly(value: Date | string): string {
   if (Number.isNaN(parsed.getTime())) {
     return typeof value === "string" ? value.slice(0, 10) : "";
   }
-  return parsed.toISOString().slice(0, 10);
+  return formatStoredDateOnly(parsed);
 }
 
 export function SettingsManager({
