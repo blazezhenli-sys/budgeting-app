@@ -55,6 +55,12 @@ export const budgetAssignmentSchema = z.object({
   assignments: z.array(assignmentSchema),
 });
 
+export const budgetCoverOverspendingSchema = z.object({
+  month: z.string().regex(monthRegex),
+  overspentCategoryId: z.string().min(1),
+  sourceCategoryId: z.string().min(1),
+});
+
 export const transactionSchema = z.object({
   date: z.string().min(1),
   accountId: z.string().min(1),
