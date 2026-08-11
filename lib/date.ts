@@ -16,3 +16,15 @@ export function todayInTimeZone(timeZone: string): string {
 
   return `${year}-${month}-${day}`;
 }
+
+export function parseDateOnly(value: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(Number.NaN);
+  }
+
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+export function formatDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}

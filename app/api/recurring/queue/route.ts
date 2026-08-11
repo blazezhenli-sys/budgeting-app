@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { requireApiUser } from "@/lib/server/api";
+import { badRequest, requireApiUser } from "@/lib/server/api";
+import { todayInTimeZone } from "@/lib/date";
 import { listRecurringQueue } from "@/lib/server/recurring";
+import { ensureSettings } from "@/lib/server/settings";
 
 export async function GET(request: Request) {
   const { user, response } = await requireApiUser();
@@ -9,7 +11,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const throughDate = url.searchParams.get("throughDate") ?? undefined;
+  if (throughDate && !/^\d{4}-\d{2}-\d{2}$/.test(throughDate)) {
+    return badRequest("Invalid throughDate query");
+  }
 
-  const queue = await listRecurringQueue(user.id, throughDate);
-  return NextResponse.json({ queue, throughDate: throughDate ?? new Date().toISOString().slice(0, 10) });
+  const [queue, settings] = await Promise.all([listRecurringQueue(user.id, throughDate), ensureSettings(user.id)]);
+  return NextResponse.json({ queue, throughDate: throughDate ?? todayInTimeZone(settings.timezone) });
 }

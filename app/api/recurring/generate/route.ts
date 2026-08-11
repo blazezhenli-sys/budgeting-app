@@ -13,8 +13,12 @@ export async function POST(request: Request) {
     return badRequest("Invalid recurring generation payload");
   }
 
-  const result = await generateRecurringTransactions(user.id, payload.data.throughDate, {
-    ruleIds: payload.data.ruleIds,
-  });
-  return NextResponse.json(result);
+  try {
+    const result = await generateRecurringTransactions(user.id, payload.data.throughDate, {
+      ruleIds: payload.data.ruleIds,
+    });
+    return NextResponse.json(result);
+  } catch (error) {
+    return badRequest(error instanceof Error ? error.message : "Failed to generate recurring transactions");
+  }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextRecurringDate, normalizeRecurringAmount } from "@/lib/server/recurring";
+import { nextQueuedRecurringDate, nextRecurringDate, normalizeRecurringAmount } from "@/lib/server/recurring";
 
 describe("recurring schedule", () => {
   it("advances weekly rules by 7 days", () => {
@@ -24,5 +24,27 @@ describe("recurring schedule", () => {
     expect(normalizeRecurringAmount(5000, "inflow-1", "INFLOW")).toBe(5000);
     expect(normalizeRecurringAmount(-5000, "inflow-1", "INFLOW")).toBe(5000);
     expect(normalizeRecurringAmount(-5000, null, null)).toBe(5000);
+  });
+
+  it("queues the next open occurrence after skipping a closed month", () => {
+    const next = nextQueuedRecurringDate(
+      new Date("2026-07-01T00:00:00.000Z"),
+      "MONTHLY",
+      new Date("2026-08-11T00:00:00.000Z"),
+      new Set(["2026-07"]),
+    );
+
+    expect(next?.toISOString().slice(0, 10)).toBe("2026-08-01");
+  });
+
+  it("returns no queued occurrence when all due dates are closed", () => {
+    const next = nextQueuedRecurringDate(
+      new Date("2026-07-01T00:00:00.000Z"),
+      "MONTHLY",
+      new Date("2026-07-20T00:00:00.000Z"),
+      new Set(["2026-07"]),
+    );
+
+    expect(next).toBeNull();
   });
 });

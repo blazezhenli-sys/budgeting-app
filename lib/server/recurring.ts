@@ -1,8 +1,10 @@
-import { addMonths, addWeeks, endOfDay, isBefore } from "date-fns";
+import { addMonths, addWeeks } from "date-fns";
 import type { Prisma } from "@prisma/client";
 
+import { formatDateOnly, parseDateOnly, todayInTimeZone } from "@/lib/date";
 import { prisma } from "@/lib/db";
 import type { RecurringFrequency } from "@/lib/types";
+import { ensureSettings } from "@/lib/server/settings";
 
 export function nextRecurringDate(date: Date, frequency: RecurringFrequency): Date {
   if (frequency === "WEEKLY") {
@@ -25,12 +27,50 @@ export function normalizeRecurringAmount(
   return absoluteAmount * -1;
 }
 
+function monthKeyFromDate(date: Date): string {
+  return formatDateOnly(date).slice(0, 7);
+}
+
+async function resolveRecurringThroughDate(userId: string, throughDateInput?: string): Promise<Date> {
+  if (throughDateInput) {
+    return parseDateOnly(throughDateInput);
+  }
+
+  const settings = await ensureSettings(userId);
+  return parseDateOnly(todayInTimeZone(settings.timezone));
+}
+
+export function nextQueuedRecurringDate(
+  startDate: Date,
+  frequency: RecurringFrequency,
+  throughDate: Date,
+  closedMonths: Set<string>,
+): Date | null {
+  const throughDateKey = formatDateOnly(throughDate);
+  let cursor = new Date(startDate);
+
+  while (formatDateOnly(cursor) <= throughDateKey) {
+    if (!closedMonths.has(monthKeyFromDate(cursor))) {
+      return cursor;
+    }
+
+    cursor = nextRecurringDate(cursor, frequency);
+  }
+
+  return null;
+}
+
 export async function generateRecurringTransactions(
   userId: string,
   throughDateInput?: string,
   options?: { ruleIds?: string[] },
 ) {
-  const throughDate = throughDateInput ? endOfDay(new Date(throughDateInput)) : endOfDay(new Date());
+  const throughDate = await resolveRecurringThroughDate(userId, throughDateInput);
+  if (Number.isNaN(throughDate.getTime())) {
+    throw new Error("Invalid throughDate");
+  }
+
+  const throughDateKey = formatDateOnly(throughDate);
   const limitedRuleIds = options?.ruleIds?.length ? options.ruleIds : null;
 
   const rules = await prisma.recurringRule.findMany({
@@ -60,10 +100,10 @@ export async function generateRecurringTransactions(
   let createdCount = 0;
 
   for (const rule of rules) {
-    let nextDate = rule.nextRunDate;
+    let nextDate = new Date(rule.nextRunDate);
 
-    while (isBefore(nextDate, throughDate) || nextDate.getTime() === throughDate.getTime()) {
-      const monthKey = nextDate.toISOString().slice(0, 7);
+    while (formatDateOnly(nextDate) <= throughDateKey) {
+      const monthKey = monthKeyFromDate(nextDate);
       if (closedMonths.has(monthKey)) {
         nextDate = nextRecurringDate(nextDate, rule.frequency);
         continue;
@@ -133,7 +173,11 @@ export type RecurringQueueItem = {
 };
 
 export async function listRecurringQueue(userId: string, throughDateInput?: string): Promise<RecurringQueueItem[]> {
-  const throughDate = throughDateInput ? endOfDay(new Date(throughDateInput)) : endOfDay(new Date());
+  const throughDate = await resolveRecurringThroughDate(userId, throughDateInput);
+  if (Number.isNaN(throughDate.getTime())) {
+    throw new Error("Invalid throughDate");
+  }
+
   const closedMonthRows = await prisma.budgetMonth.findMany({
     where: { userId, status: "CLOSED" },
     select: { monthKey: true },
@@ -154,14 +198,21 @@ export async function listRecurringQueue(userId: string, throughDateInput?: stri
   });
 
   return rules
-    .filter((rule) => !closedMonths.has(rule.nextRunDate.toISOString().slice(0, 7)))
-    .map((rule) => ({
-      ruleId: rule.id,
-      payee: rule.payee,
-      amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
-      frequency: rule.frequency,
-      nextRunDate: rule.nextRunDate.toISOString().slice(0, 10),
-      account: { id: rule.account.id, name: rule.account.name },
-      category: rule.category ? { id: rule.category.id, name: rule.category.name } : null,
-    }));
+    .map((rule) => {
+      const queuedDate = nextQueuedRecurringDate(rule.nextRunDate, rule.frequency, throughDate, closedMonths);
+      if (!queuedDate) {
+        return null;
+      }
+
+      return {
+        ruleId: rule.id,
+        payee: rule.payee,
+        amount: normalizeRecurringAmount(rule.amount, rule.categoryId, rule.category?.specialType ?? null),
+        frequency: rule.frequency,
+        nextRunDate: formatDateOnly(queuedDate),
+        account: { id: rule.account.id, name: rule.account.name },
+        category: rule.category ? { id: rule.category.id, name: rule.category.name } : null,
+      };
+    })
+    .filter((item): item is RecurringQueueItem => item !== null);
 }
