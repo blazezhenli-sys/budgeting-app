@@ -70,10 +70,14 @@ type RuleRow = {
 type TransactionRow = {
   id: string;
   userId: string;
+  accountId: string;
+  recurringRuleId: string | null;
   amount: number;
   categoryId: string | null;
   payee: string;
+  memo: string | null;
   date: Date;
+  status: TransactionStatus;
   user: { email: string };
   category: { specialType: string | null } | null;
   recurringRule: {
@@ -198,6 +202,7 @@ async function main() {
     matchesUserFilter({ id: row.userId, email: row.user.email }, userId, userEmail),
   );
   const filteredGenerations = generations.filter((row) => filteredRuleIds.has(row.ruleId));
+  const allTransactionsById = new Map(transactions.map((row) => [row.id, row]));
 
   const ruleRepairs = filteredRules
     .map((row) => ({
@@ -252,6 +257,18 @@ async function main() {
     occurrenceDate: string;
     email: string;
   }> = [];
+  const generationBackfillRepairs: Array<{
+    generationId: string;
+    ruleId: string;
+    userId: string;
+    email: string;
+    payee: string;
+    occurrenceDate: string;
+    amount: number;
+    linkedTransactionId: string;
+    linkedTransactionDate: string | null;
+    linkedTransactionUserId: string | null;
+  }> = [];
   const missingOccurrenceRepairs: Array<{
     ruleId: string;
     userId: string;
@@ -268,6 +285,9 @@ async function main() {
       const occurrenceKey = `${rule.id}:${dateKey(occurrenceDate)}`;
       const existingTransaction = transactionsByRuleAndDate.get(occurrenceKey);
       const existingGeneration = generationsByRuleAndDate.get(occurrenceKey);
+      const linkedTransaction = existingGeneration
+        ? allTransactionsById.get(existingGeneration.transactionId) ?? null
+        : null;
 
       if (existingTransaction && !existingGeneration) {
         generationRepairs.push({
@@ -275,6 +295,22 @@ async function main() {
           transactionId: existingTransaction.id,
           occurrenceDate: dateKey(occurrenceDate),
           email: rule.user.email,
+        });
+        continue;
+      }
+
+      if (!existingTransaction && existingGeneration) {
+        generationBackfillRepairs.push({
+          generationId: existingGeneration.id,
+          ruleId: rule.id,
+          userId: rule.userId,
+          email: rule.user.email,
+          payee: rule.payee,
+          occurrenceDate: dateKey(occurrenceDate),
+          amount: desiredAmount,
+          linkedTransactionId: existingGeneration.transactionId,
+          linkedTransactionDate: linkedTransaction ? dateKey(linkedTransaction.date) : null,
+          linkedTransactionUserId: linkedTransaction?.userId ?? null,
         });
         continue;
       }
@@ -310,6 +346,8 @@ async function main() {
           signRepairSample: transactionSignRepairs.slice(0, 10),
           generationRepairCount: generationRepairs.length,
           generationRepairSample: generationRepairs.slice(0, 10),
+          generationBackfillCount: generationBackfillRepairs.length,
+          generationBackfillSample: generationBackfillRepairs.slice(0, 10),
           backfillCount: missingOccurrenceRepairs.length,
           backfillSample: missingOccurrenceRepairs.slice(0, 10),
           skippedCount: skippedTransactions.length,
@@ -326,7 +364,13 @@ async function main() {
     return;
   }
 
-  if (!ruleRepairs.length && !transactionSignRepairs.length && !generationRepairs.length && !missingOccurrenceRepairs.length) {
+  if (
+    !ruleRepairs.length &&
+    !transactionSignRepairs.length &&
+    !generationRepairs.length &&
+    !generationBackfillRepairs.length &&
+    !missingOccurrenceRepairs.length
+  ) {
     console.log("No recurring repairs needed.");
     return;
   }
@@ -347,6 +391,12 @@ async function main() {
     current.push(row);
     generationRepairsByRule.set(row.ruleId, current);
   }
+  const generationBackfillRepairsByRule = new Map<string, typeof generationBackfillRepairs>();
+  for (const row of generationBackfillRepairs) {
+    const current = generationBackfillRepairsByRule.get(row.ruleId) ?? [];
+    current.push(row);
+    generationBackfillRepairsByRule.set(row.ruleId, current);
+  }
   const missingOccurrenceRepairsByRule = new Map<string, typeof missingOccurrenceRepairs>();
   for (const row of missingOccurrenceRepairs) {
     const current = missingOccurrenceRepairsByRule.get(row.ruleId) ?? [];
@@ -360,6 +410,7 @@ async function main() {
     const nextRunDate = computeAdvancedNextRunDate(rule, throughDate);
     const signRepairTransactions = transactionSignRepairsByRule.get(rule.id) ?? [];
     const generationRepairRows = generationRepairsByRule.get(rule.id) ?? [];
+    const generationBackfillRows = generationBackfillRepairsByRule.get(rule.id) ?? [];
     const missingOccurrenceRows = missingOccurrenceRepairsByRule.get(rule.id) ?? [];
 
     await prisma.$transaction(async (tx) => {
@@ -367,6 +418,7 @@ async function main() {
         amountRepair ||
         nextRunDate.getTime() !== rule.nextRunDate.getTime() ||
         generationRepairRows.length > 0 ||
+        generationBackfillRows.length > 0 ||
         missingOccurrenceRows.length > 0
       ) {
         await tx.recurringRule.update({
@@ -375,7 +427,10 @@ async function main() {
             amount: signFixedAmount,
             nextRunDate,
             lastGeneratedAt:
-              generationRepairRows.length > 0 || missingOccurrenceRows.length > 0 || nextRunDate.getTime() !== rule.nextRunDate.getTime()
+              generationRepairRows.length > 0 ||
+              generationBackfillRows.length > 0 ||
+              missingOccurrenceRows.length > 0 ||
+              nextRunDate.getTime() !== rule.nextRunDate.getTime()
                 ? new Date()
                 : rule.lastGeneratedAt,
           },
@@ -396,6 +451,44 @@ async function main() {
             occurrenceDate: new Date(`${row.occurrenceDate}T00:00:00.000Z`),
             transactionId: row.transactionId,
           },
+        });
+      }
+
+      for (const row of generationBackfillRows) {
+        if (row.linkedTransactionUserId === rule.userId) {
+          await tx.transaction.update({
+            where: { id: row.linkedTransactionId },
+            data: {
+              accountId: rule.accountId,
+              categoryId: rule.categoryId,
+              recurringRuleId: rule.id,
+              date: new Date(`${row.occurrenceDate}T00:00:00.000Z`),
+              payee: rule.payee,
+              memo: rule.memo,
+              amount: signFixedAmount,
+              status: rule.status,
+            },
+          });
+          continue;
+        }
+
+        const createdTransaction = await tx.transaction.create({
+          data: {
+            userId: rule.userId,
+            accountId: rule.accountId,
+            categoryId: rule.categoryId,
+            recurringRuleId: rule.id,
+            date: new Date(`${row.occurrenceDate}T00:00:00.000Z`),
+            payee: rule.payee,
+            memo: rule.memo,
+            amount: signFixedAmount,
+            status: rule.status,
+          },
+        });
+
+        await tx.recurringGeneration.update({
+          where: { id: row.generationId },
+          data: { transactionId: createdTransaction.id },
         });
       }
 
@@ -426,7 +519,7 @@ async function main() {
   }
 
   console.log(
-    `Applied ${ruleRepairs.length} rule sign repairs, ${transactionSignRepairs.length} transaction sign repairs, ${generationRepairs.length} generation repairs, and ${missingOccurrenceRepairs.length} backfilled recurring transactions.`,
+    `Applied ${ruleRepairs.length} rule sign repairs, ${transactionSignRepairs.length} transaction sign repairs, ${generationRepairs.length} generation repairs, ${generationBackfillRepairs.length} generation-linked transaction repairs, and ${missingOccurrenceRepairs.length} backfilled recurring transactions.`,
   );
 }
 
