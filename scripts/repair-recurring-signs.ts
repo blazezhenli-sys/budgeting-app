@@ -124,19 +124,23 @@ function desiredTransactionAmount(row: TransactionRow): number | null {
 
 function listCandidateOccurrenceDates(rule: RuleRow, throughDate: Date): Date[] {
   const createdDay = dateKey(rule.createdAt);
-  const dates: Date[] = [];
-  let cursor = new Date(rule.nextRunDate);
+  const dates = new Map<string, Date>();
 
-  while (cursor.getTime() > throughDate.getTime()) {
-    cursor = previousRecurringDate(cursor, rule.frequency);
+  let backwardCursor = new Date(rule.nextRunDate);
+  while (dateKey(backwardCursor) >= createdDay) {
+    dates.set(dateKey(backwardCursor), new Date(backwardCursor));
+    backwardCursor = previousRecurringDate(backwardCursor, rule.frequency);
   }
 
-  while (dateKey(cursor) >= createdDay) {
-    dates.push(new Date(cursor));
-    cursor = previousRecurringDate(cursor, rule.frequency);
+  let forwardCursor = nextRecurringDate(new Date(rule.nextRunDate), rule.frequency);
+  while (forwardCursor.getTime() <= throughDate.getTime()) {
+    dates.set(dateKey(forwardCursor), new Date(forwardCursor));
+    forwardCursor = nextRecurringDate(forwardCursor, rule.frequency);
   }
 
-  return dates.sort((left, right) => left.getTime() - right.getTime());
+  return [...dates.values()]
+    .filter((value) => value.getTime() <= throughDate.getTime())
+    .sort((left, right) => left.getTime() - right.getTime());
 }
 
 function computeAdvancedNextRunDate(rule: RuleRow, throughDate: Date): Date {
