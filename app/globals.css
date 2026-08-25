@@ -291,6 +291,22 @@ th {
   min-width: 0;
 }
 
+.category-detail-grid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.category-detail-label {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.category-detail-label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .category-name {
   display: inline-flex;
   align-items: center;
@@ -313,6 +329,39 @@ th {
   align-items: flex-end;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.category-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: rgba(151, 179, 168, 0.12);
+}
+
+.category-archive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.category-delete-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem;
+  background: rgba(34, 49, 44, 0.28);
+}
+
+.category-delete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .category-move-label {
@@ -661,6 +710,10 @@ th {
 
   .category-target {
     flex-wrap: wrap;
+  }
+
+  .category-delete-actions > button {
+    flex: 1 1 100%;
   }
 
   .category-target-input {

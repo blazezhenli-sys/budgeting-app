@@ -1,4 +1,5 @@
 import { endOfDay } from "date-fns";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { monthBounds } from "@/lib/month";
@@ -65,28 +66,63 @@ export async function setBudgetMonthStatus(userId: string, month: MonthKey, stat
   });
 }
 
+export function incomeTransactionWhere(userId: string, start?: Date, end?: Date): Prisma.TransactionWhereInput {
+  return {
+    userId,
+    transferGroup: null,
+    amount: { gt: 0 },
+    category: { specialType: "INFLOW" },
+    ...(start || end
+      ? {
+          date: {
+            ...(start ? { gte: start } : {}),
+            ...(end ? { lte: end } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 async function incomeSum(userId: string, start?: Date, end?: Date): Promise<number> {
   const aggregate = await prisma.transaction.aggregate({
-    where: {
-      userId,
-      transferGroup: null,
-      amount: { gt: 0 },
-      OR: [{ categoryId: null }, { category: { specialType: "INFLOW" } }],
-      ...(start || end
-        ? {
-            date: {
-              ...(start ? { gte: start } : {}),
-              ...(end ? { lte: end } : {}),
-            },
-          }
-        : {}),
-    },
+    where: incomeTransactionWhere(userId, start, end),
     _sum: {
       amount: true,
     },
   });
 
   return aggregate._sum.amount ?? 0;
+}
+
+async function uncategorizedExpenseSummary(userId: string, start: Date, end: Date): Promise<{ count: number; amount: number }> {
+  const [count, aggregate] = await Promise.all([
+    prisma.transaction.count({
+      where: {
+        userId,
+        transferGroup: null,
+        categoryId: null,
+        amount: { lt: 0 },
+        date: { gte: start, lte: endOfDay(end) },
+      },
+    }),
+    prisma.transaction.aggregate({
+      where: {
+        userId,
+        transferGroup: null,
+        categoryId: null,
+        amount: { lt: 0 },
+        date: { gte: start, lte: endOfDay(end) },
+      },
+      _sum: {
+        amount: true,
+      },
+    }),
+  ]);
+
+  return {
+    count,
+    amount: Math.abs(aggregate._sum.amount ?? 0),
+  };
 }
 
 async function openingBalanceSum(userId: string, start?: Date, end?: Date): Promise<number> {
@@ -205,7 +241,7 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
   const { start, end } = monthBounds(month);
   const budgetMonth = await ensureBudgetMonth(userId, month);
 
-  const [categories, currentAssignments, priorAssignments, currentActivity, priorActivity] =
+  const [categories, currentAssignments, priorAssignments, currentActivity, priorActivity, uncategorizedExpenses] =
     await Promise.all([
       prisma.category.findMany({
         where: { userId, specialType: null },
@@ -228,6 +264,7 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
       }),
       activityByCategory(userId, { start, end }),
       activityByCategory(userId, { end: new Date(start.getTime() - 1) }),
+      uncategorizedExpenseSummary(userId, start, end),
     ]);
 
   const assignedCurrentByCategory: AmountMap = new Map();
@@ -275,7 +312,7 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
   const spent = rows
     .map((row) => row.activity)
     .filter((amount) => amount < 0)
-    .reduce((sum, amount) => sum + Math.abs(amount), 0);
+    .reduce((sum, amount) => sum + Math.abs(amount), 0) + uncategorizedExpenses.amount;
 
   const ready = availableToAssign(
     incomeBefore + openingBefore,
@@ -284,6 +321,11 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
     assignedCurrent,
   );
   const warnings = rows.filter((row) => row.overspent).map((row) => `${row.categoryName} is overspent`);
+  if (uncategorizedExpenses.count > 0) {
+    warnings.push(
+      `${uncategorizedExpenses.count} uncategorized expense transaction${uncategorizedExpenses.count === 1 ? "" : "s"} in ${month} need a category.`,
+    );
+  }
 
   return {
     month,

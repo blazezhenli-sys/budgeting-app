@@ -17,6 +17,129 @@ async function isSystemGroup(userId: string, groupId: string): Promise<boolean> 
   return Boolean(systemCategory);
 }
 
+function formatCategoryDeletionBlockers({
+  directTransactions,
+  splitTransactions,
+  recurringRules,
+  budgetAssignments,
+}: {
+  directTransactions: number;
+  splitTransactions: number;
+  recurringRules: number;
+  budgetAssignments: number;
+}): string {
+  const blockers = [
+    directTransactions ? `${directTransactions} transaction${directTransactions === 1 ? "" : "s"}` : null,
+    splitTransactions ? `${splitTransactions} split allocation${splitTransactions === 1 ? "" : "s"}` : null,
+    recurringRules ? `${recurringRules} recurring rule${recurringRules === 1 ? "" : "s"}` : null,
+    budgetAssignments ? `${budgetAssignments} budget assignment${budgetAssignments === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+
+  return `Cannot delete a category that still has content: ${blockers.join(", ")}. Move the activity first or archive the category instead.`;
+}
+
+async function moveCategoryContentAndDelete(
+  userId: string,
+  categoryId: string,
+  replacementCategoryId: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const [splitRows, sourceBudgets] = await Promise.all([
+      tx.transactionSplit.findMany({
+        where: {
+          categoryId,
+          transaction: {
+            userId,
+          },
+        },
+        select: { id: true },
+      }),
+      tx.categoryBudget.findMany({
+        where: {
+          userId,
+          categoryId,
+        },
+      }),
+    ]);
+
+    const targetBudgets = sourceBudgets.length
+      ? await tx.categoryBudget.findMany({
+          where: {
+            userId,
+            categoryId: replacementCategoryId,
+            budgetMonthId: { in: sourceBudgets.map((budget) => budget.budgetMonthId) },
+          },
+        })
+      : [];
+
+    const targetBudgetByMonth = new Map(targetBudgets.map((budget) => [budget.budgetMonthId, budget]));
+
+    const [movedTransactions, movedRecurringRules, movedSplits] = await Promise.all([
+      tx.transaction.updateMany({
+        where: {
+          userId,
+          categoryId,
+        },
+        data: {
+          categoryId: replacementCategoryId,
+        },
+      }),
+      tx.recurringRule.updateMany({
+        where: {
+          userId,
+          categoryId,
+        },
+        data: {
+          categoryId: replacementCategoryId,
+        },
+      }),
+      splitRows.length
+        ? tx.transactionSplit.updateMany({
+            where: {
+              id: { in: splitRows.map((split) => split.id) },
+            },
+            data: {
+              categoryId: replacementCategoryId,
+            },
+          })
+        : Promise.resolve({ count: 0 }),
+    ]);
+
+    let movedBudgetAssignments = 0;
+    for (const sourceBudget of sourceBudgets) {
+      const targetBudget = targetBudgetByMonth.get(sourceBudget.budgetMonthId);
+      if (targetBudget) {
+        await tx.categoryBudget.update({
+          where: { id: targetBudget.id },
+          data: {
+            assigned: targetBudget.assigned + sourceBudget.assigned,
+          },
+        });
+        await tx.categoryBudget.delete({
+          where: { id: sourceBudget.id },
+        });
+      } else {
+        await tx.categoryBudget.update({
+          where: { id: sourceBudget.id },
+          data: {
+            categoryId: replacementCategoryId,
+          },
+        });
+      }
+      movedBudgetAssignments += 1;
+    }
+
+    await tx.category.delete({ where: { id: categoryId } });
+
+    return {
+      movedTransactions: movedTransactions.count,
+      movedSplits: movedSplits.count,
+      movedRecurringRules: movedRecurringRules.count,
+      movedBudgetAssignments,
+    };
+  });
+}
+
 export async function GET() {
   const { user, response } = await requireApiUser();
   if (!user) return response!;
@@ -183,6 +306,16 @@ export async function DELETE(request: Request) {
     return badRequest("Missing id query parameter");
   }
 
+  let replacementCategoryId: string | null = null;
+  try {
+    const body = (await request.json()) as { replacementCategoryId?: string | null };
+    if (typeof body?.replacementCategoryId === "string" && body.replacementCategoryId.trim()) {
+      replacementCategoryId = body.replacementCategoryId;
+    }
+  } catch {
+    replacementCategoryId = null;
+  }
+
   if (kind === "group") {
     const existingGroup = await prisma.categoryGroup.findFirst({
       where: { id, userId: user.id },
@@ -226,15 +359,89 @@ export async function DELETE(request: Request) {
   if (await isSystemGroup(user.id, existingCategory.groupId)) {
     return NextResponse.json({ error: "Categories in the system group are read-only." }, { status: 409 });
   }
+  if (replacementCategoryId === id) {
+    return NextResponse.json({ error: "Choose a different category to move content into." }, { status: 409 });
+  }
 
-  const deletedBudgets = await prisma.categoryBudget.deleteMany({
-    where: { userId: user.id, categoryId: id },
-  });
+  const [directTransactions, splitTransactions, recurringRules, budgetAssignments] = await Promise.all([
+    prisma.transaction.count({
+      where: {
+        userId: user.id,
+        categoryId: id,
+      },
+    }),
+    prisma.transactionSplit.count({
+      where: {
+        categoryId: id,
+        transaction: {
+          userId: user.id,
+        },
+      },
+    }),
+    prisma.recurringRule.count({
+      where: {
+        userId: user.id,
+        categoryId: id,
+      },
+    }),
+    prisma.categoryBudget.count({
+      where: {
+        userId: user.id,
+        categoryId: id,
+      },
+    }),
+  ]);
+
+  if (directTransactions || splitTransactions || recurringRules || budgetAssignments) {
+    if (!replacementCategoryId) {
+      return NextResponse.json(
+        {
+          error: `${formatCategoryDeletionBlockers({
+            directTransactions,
+            splitTransactions,
+            recurringRules,
+            budgetAssignments,
+          })} Choose another category as the replacement before deleting this one.`,
+        },
+        { status: 409 },
+      );
+    }
+
+    const replacementCategory = await prisma.category.findFirst({
+      where: {
+        id: replacementCategoryId,
+        userId: user.id,
+        specialType: null,
+        archived: false,
+      },
+      select: {
+        id: true,
+      },
+    });
+    if (!replacementCategory) {
+      return NextResponse.json(
+        { error: "Replacement category not found. Choose another active category." },
+        { status: 404 },
+      );
+    }
+
+    const moved = await moveCategoryContentAndDelete(user.id, id, replacementCategory.id);
+    return NextResponse.json(
+      {
+        deleted: true,
+        kind: "category",
+        id,
+        replacementCategoryId: replacementCategory.id,
+        ...moved,
+      },
+      { status: 200 },
+    );
+  }
+
   await prisma.category.delete({ where: { id } });
   return NextResponse.json({
     deleted: true,
     kind: "category",
     id,
-    deletedBudgetAssignments: deletedBudgets.count,
   });
 }

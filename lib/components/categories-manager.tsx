@@ -26,6 +26,9 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
   const [categoryName, setCategoryName] = useState("");
   const [categoryTarget, setCategoryTarget] = useState("");
   const [groupId, setGroupId] = useState(initialGroupId);
+  const [nameDrafts, setNameDrafts] = useState<Record<string, string>>(
+    Object.fromEntries(initialCategories.map((category) => [category.id, category.name])),
+  );
   const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>(
     Object.fromEntries(
       initialCategories.map((category) => [
@@ -34,7 +37,10 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       ]),
     ),
   );
-  const [movingCategoryIds, setMovingCategoryIds] = useState<Record<string, boolean>>({});
+  const [workingCategoryIds, setWorkingCategoryIds] = useState<Record<string, boolean>>({});
+  const [showArchived, setShowArchived] = useState(false);
+  const [deleteDraftCategoryId, setDeleteDraftCategoryId] = useState<string | null>(null);
+  const [deleteReplacementCategoryId, setDeleteReplacementCategoryId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const systemGroupIds = useMemo(
@@ -57,14 +63,26 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     () => categories.filter((category) => !systemGroupIds.has(category.groupId)),
     [categories, systemGroupIds],
   );
+  const activeEditableCategories = useMemo(
+    () => editableCategories.filter((category) => !category.archived),
+    [editableCategories],
+  );
+  const visibleEditableCategories = useMemo(
+    () => editableCategories.filter((category) => showArchived || !category.archived),
+    [editableCategories, showArchived],
+  );
   const grouped = useMemo(
     () =>
       editableGroups.map((group) => ({
         ...group,
-        categories: editableCategories.filter((category) => category.groupId === group.id),
+        categories: visibleEditableCategories.filter((category) => category.groupId === group.id),
       })),
-    [editableCategories, editableGroups],
+    [editableGroups, visibleEditableCategories],
   );
+
+  function setCategoryWorking(categoryId: string, working: boolean) {
+    setWorkingCategoryIds((previous) => ({ ...previous, [categoryId]: working }));
+  }
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,6 +142,10 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     }
 
     setCategories((previous) => [...previous, payload.category]);
+    setNameDrafts((previous) => ({
+      ...previous,
+      [payload.category.id]: payload.category.name,
+    }));
     setTargetDrafts((previous) => ({
       ...previous,
       [payload.category.id]:
@@ -137,22 +159,52 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
 
   async function deleteCategory(categoryId: string) {
     setError(null);
+    const category = categories.find((item) => item.id === categoryId);
+    if (!category) {
+      return;
+    }
+    setCategoryWorking(categoryId, true);
     const response = await fetch(
       `/api/categories?kind=category&id=${encodeURIComponent(categoryId)}`,
-      { method: "DELETE" },
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          replacementCategoryId: deleteReplacementCategoryId || null,
+        }),
+      },
     );
     const payload = await response.json();
+    setCategoryWorking(categoryId, false);
     if (!response.ok) {
       setError(payload.error ?? "Failed to delete category");
       return;
     }
 
     setCategories((previous) => previous.filter((category) => category.id !== categoryId));
+    setNameDrafts((previous) => {
+      const next = { ...previous };
+      delete next[categoryId];
+      return next;
+    });
+    setTargetDrafts((previous) => {
+      const next = { ...previous };
+      delete next[categoryId];
+      return next;
+    });
+    setDeleteDraftCategoryId(null);
+    setDeleteReplacementCategoryId("");
   }
 
-  async function saveTarget(category: Category) {
+  async function saveCategory(category: Category) {
     setError(null);
+    const nextName = (nameDrafts[category.id] ?? category.name).trim();
     const draft = targetDrafts[category.id] ?? "";
+
+    if (!nextName) {
+      setError("Category name is required.");
+      return;
+    }
 
     let targetMonthly: number | null = null;
     if (draft.trim()) {
@@ -164,21 +216,28 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       }
     }
 
+    setCategoryWorking(category.id, true);
+
     const response = await fetch("/api/categories", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: category.id, targetMonthly }),
+      body: JSON.stringify({ id: category.id, name: nextName, targetMonthly }),
     });
 
     const payload = await response.json();
+    setCategoryWorking(category.id, false);
     if (!response.ok) {
-      setError(payload.error ?? "Failed to update target");
+      setError(payload.error ?? "Failed to update category");
       return;
     }
 
     setCategories((previous) =>
-      previous.map((item) => (item.id === category.id ? { ...item, targetMonthly: payload.category.targetMonthly } : item)),
+      previous.map((item) => (item.id === category.id ? payload.category : item)),
     );
+    setNameDrafts((previous) => ({
+      ...previous,
+      [category.id]: payload.category.name,
+    }));
     setTargetDrafts((previous) => ({
       ...previous,
       [category.id]:
@@ -195,7 +254,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
 
     setError(null);
     const previousGroupId = category.groupId;
-    setMovingCategoryIds((previous) => ({ ...previous, [category.id]: true }));
+    setCategoryWorking(category.id, true);
     setCategories((previous) =>
       previous.map((item) =>
         item.id === category.id ? { ...item, groupId: nextGroupId } : item,
@@ -216,14 +275,64 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
         ),
       );
       setError(payload.error ?? "Failed to move category");
-      setMovingCategoryIds((previous) => ({ ...previous, [category.id]: false }));
+      setCategoryWorking(category.id, false);
       return;
     }
 
     setCategories((previous) =>
       previous.map((item) => (item.id === category.id ? payload.category : item)),
     );
-    setMovingCategoryIds((previous) => ({ ...previous, [category.id]: false }));
+    setNameDrafts((previous) => ({
+      ...previous,
+      [category.id]: payload.category.name,
+    }));
+    setCategoryWorking(category.id, false);
+  }
+
+  async function toggleCategoryArchived(category: Category) {
+    setError(null);
+    setCategoryWorking(category.id, true);
+
+    const response = await fetch("/api/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: category.id,
+        archived: !category.archived,
+      }),
+    });
+    const payload = await response.json();
+    setCategoryWorking(category.id, false);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Failed to update archived state");
+      return;
+    }
+
+    setCategories((previous) =>
+      previous.map((item) => (item.id === category.id ? payload.category : item)),
+    );
+    setNameDrafts((previous) => ({
+      ...previous,
+      [category.id]: payload.category.name,
+    }));
+    setTargetDrafts((previous) => ({
+      ...previous,
+      [category.id]:
+        payload.category.targetMonthly === null
+          ? ""
+          : usdCentsToDisplayInput(payload.category.targetMonthly, currency, usdRateMap),
+    }));
+    if (deleteDraftCategoryId === category.id) {
+      setDeleteDraftCategoryId(null);
+      setDeleteReplacementCategoryId("");
+    }
+  }
+
+  function startDeleteCategory(category: Category) {
+    const replacementOptions = activeEditableCategories.filter((item) => item.id !== category.id);
+    setDeleteDraftCategoryId(category.id);
+    setDeleteReplacementCategoryId(replacementOptions[0]?.id ?? "");
   }
 
   async function deleteGroup(groupIdToDelete: string) {
@@ -356,6 +465,19 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
 
       <section className="card">
         <h2>Categories by group</h2>
+        <div className="inline-row" style={{ justifyContent: "space-between", marginBottom: "0.75rem" }}>
+          <label className="category-archive-toggle">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => setShowArchived(event.target.checked)}
+            />
+            <span>Show archived</span>
+          </label>
+          <p className="muted" style={{ margin: 0 }}>
+            {visibleEditableCategories.length} visible
+          </p>
+        </div>
         {!editableGroups.length ? <p className="muted">No editable groups yet.</p> : null}
         {grouped.map((group) => (
           <div key={group.id} className="category-group-block">
@@ -398,16 +520,28 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
             <ul className="category-list">
               {group.categories.length ? (
                 group.categories.map((category) => {
-                  const isMoving = movingCategoryIds[category.id] ?? false;
+                  const isWorking = workingCategoryIds[category.id] ?? false;
+                  const replacementCategories = activeEditableCategories.filter((item) => item.id !== category.id);
                   return (
                     <li key={category.id} className="category-item">
                       <div className="category-main">
-                        <span className="category-name">
-                          {category.name}
-                          {category.specialType === "INFLOW" ? " (System)" : ""}
-                        </span>
-                        {category.specialType === "INFLOW" ? null : (
-                          <div className="category-target">
+                        <div className="category-detail-grid">
+                          <label className="category-detail-label">
+                            <span>Name</span>
+                            <input
+                              value={nameDrafts[category.id] ?? category.name}
+                              onChange={(event) =>
+                                setNameDrafts((previous) => ({
+                                  ...previous,
+                                  [category.id]: event.target.value,
+                                }))
+                              }
+                              aria-label={`Name for ${category.name}`}
+                              disabled={isWorking}
+                            />
+                          </label>
+                          <label className="category-detail-label">
+                            <span>Monthly target ({currency})</span>
                             <input
                               value={targetDrafts[category.id] ?? ""}
                               onChange={(event) =>
@@ -418,19 +552,23 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               }
                               className="category-target-input"
                               aria-label={`Target for ${category.name}`}
-                              placeholder={`Target (${currency})`}
+                              placeholder="Optional"
+                              disabled={isWorking}
                             />
-                            <button type="button" className="secondary" onClick={() => saveTarget(category)} disabled={isMoving}>
-                              Save target
-                            </button>
-                          </div>
-                        )}
+                          </label>
+                        </div>
+                        <div className="inline-row">
+                          {category.archived ? <span className="category-status-badge">Archived</span> : null}
+                        </div>
                       </div>
                       <div className="category-actions">
                         {category.specialType === "INFLOW" ? (
                           <span className="muted">Locked</span>
                         ) : (
                           <>
+                            <button type="button" className="secondary" onClick={() => saveCategory(category)} disabled={isWorking}>
+                              Save
+                            </button>
                             <label className="category-move-label">
                               Group
                               <select
@@ -440,7 +578,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                                 }}
                                 aria-label={`Move ${category.name} to group`}
                                 className="category-move-select"
-                                disabled={isMoving}
+                                disabled={isWorking}
                               >
                                 {editableGroups.map((item) => (
                                   <option key={item.id} value={item.id}>
@@ -453,22 +591,79 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               type="button"
                               className="secondary"
                               onClick={() => {
-                                if (confirm(`Delete category "${category.name}"?`)) {
-                                  void deleteCategory(category.id);
-                                }
+                                void toggleCategoryArchived(category);
                               }}
-                              disabled={isMoving}
+                              disabled={isWorking}
+                            >
+                              {category.archived ? "Restore" : "Archive"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                startDeleteCategory(category);
+                              }}
+                              disabled={isWorking}
                             >
                               Delete
                             </button>
                           </>
                         )}
                       </div>
+                      {deleteDraftCategoryId === category.id ? (
+                        <div className="category-delete-panel">
+                          <p className="muted" style={{ margin: 0 }}>
+                            Delete this category and move any linked transactions, splits, recurring rules, and budget history first.
+                          </p>
+                          {replacementCategories.length ? (
+                            <label className="category-detail-label">
+                              <span>Move linked content to</span>
+                              <select
+                                value={deleteReplacementCategoryId}
+                                onChange={(event) => setDeleteReplacementCategoryId(event.target.value)}
+                                disabled={isWorking}
+                              >
+                                {replacementCategories.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : (
+                            <p className="muted" style={{ margin: 0 }}>
+                              No other active category is available. This delete will only succeed if the category is empty.
+                            </p>
+                          )}
+                          <div className="category-delete-actions">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void deleteCategory(category.id);
+                              }}
+                              disabled={isWorking}
+                            >
+                              Delete category
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                setDeleteDraftCategoryId(null);
+                                setDeleteReplacementCategoryId("");
+                              }}
+                              disabled={isWorking}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })
               ) : (
-                <li className="muted">No categories in this group yet.</li>
+                <li className="muted">{showArchived ? "No categories in this group yet." : "No active categories in this group."}</li>
               )}
             </ul>
           </div>

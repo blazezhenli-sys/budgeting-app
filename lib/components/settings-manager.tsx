@@ -55,6 +55,13 @@ export function SettingsManager({
   initialRuleDate,
   usdRateMap,
 }: Props) {
+  function recurringCategoryLabel(category: { name: string } | null, amount: number): string {
+    if (category?.name) {
+      return category.name;
+    }
+    return amount >= 0 ? "Inflow" : "Uncategorized";
+  }
+
   const [currency, setCurrency] = useState(normalizeDisplayCurrency(initialSettings.currency));
   const [timezone, setTimezone] = useState(initialSettings.timezone);
   const [monthStartDay, setMonthStartDay] = useState(String(initialSettings.monthStartDay));
@@ -301,7 +308,7 @@ export function SettingsManager({
                 <tr key={rule.id}>
                   <td>{rule.payee}</td>
                   <td>{rule.account.name}</td>
-                  <td>{rule.category?.name ?? "Inflow"}</td>
+                  <td>{recurringCategoryLabel(rule.category, rule.amount)}</td>
                   <td>{formatUsdMoney(rule.amount, currency, usdRateMap)}</td>
                   <td>{rule.frequency}</td>
                   <td>{formatDateOnly(rule.nextRunDate)}</td>
@@ -351,7 +358,7 @@ export function SettingsManager({
                     <td>{item.nextRunDate}</td>
                     <td>{item.payee}</td>
                     <td>{item.account.name}</td>
-                    <td>{item.category?.name ?? "Inflow"}</td>
+                    <td>{recurringCategoryLabel(item.category, item.amount)}</td>
                     <td>{formatUsdMoney(item.amount, currency, usdRateMap)}</td>
                   </tr>
                 ))}

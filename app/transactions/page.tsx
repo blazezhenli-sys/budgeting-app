@@ -1,6 +1,7 @@
 import { TransactionsManager } from "@/lib/components/transactions-manager";
 import { prisma } from "@/lib/db";
 import { todayInTimeZone } from "@/lib/date";
+import { monthBounds } from "@/lib/month";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
 import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
@@ -9,11 +10,22 @@ export default async function TransactionsPage() {
   const user = await requireSessionUser();
   await ensureInflowCategory(user.id);
 
-  const [accounts, categories, transactions, settings] = await Promise.all([
+  const settings = await ensureSettings(user.id);
+  const initialDate = todayInTimeZone(settings.timezone);
+  const initialMonth = initialDate.slice(0, 7);
+  const bounds = monthBounds(initialMonth);
+
+  const [accounts, categories, transactions] = await Promise.all([
     prisma.account.findMany({ where: { userId: user.id, archived: false }, orderBy: { name: "asc" } }),
     prisma.category.findMany({ where: { userId: user.id, archived: false }, orderBy: { name: "asc" } }),
     prisma.transaction.findMany({
-      where: { userId: user.id },
+      where: {
+        userId: user.id,
+        date: {
+          gte: bounds.start,
+          lte: bounds.end,
+        },
+      },
       include: {
         account: true,
         category: true,
@@ -23,7 +35,6 @@ export default async function TransactionsPage() {
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     }),
-    ensureSettings(user.id),
   ]);
 
   const serializableTransactions = transactions.map((row) => ({
@@ -45,7 +56,6 @@ export default async function TransactionsPage() {
     })),
   }));
   const inflowCategory = categories.find((category) => category.specialType === "INFLOW");
-  const initialDate = todayInTimeZone(settings.timezone);
   const usdRateMap = usdRateMapFromSettings(settings);
 
   return (
@@ -59,6 +69,7 @@ export default async function TransactionsPage() {
         currency={settings.currency}
         usdRateMap={usdRateMap}
         initialDate={initialDate}
+        initialMonth={initialMonth}
       />
     </div>
   );
