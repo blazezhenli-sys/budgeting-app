@@ -107,6 +107,7 @@ model Category {
   userId      String
   groupId     String
   name        String
+  sortOrder   Int      @default(0)
   specialType CategorySpecialType?
   targetMonthly Int?
   archived    Boolean  @default(false)

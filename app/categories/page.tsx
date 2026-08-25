@@ -15,7 +15,7 @@ export default async function CategoriesPage() {
     }),
     prisma.category.findMany({
       where: { userId: user.id },
-      orderBy: { name: "asc" },
+      orderBy: [{ group: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
     }),
     ensureSettings(user.id),
   ]);

@@ -34,6 +34,7 @@ export const categoryGroupSchema = z.object({
 export const categorySchema = z.object({
   groupId: z.string().min(1),
   name: z.string().min(1).max(80),
+  sortOrder: z.number().int().optional(),
   targetMonthly: z.number().int().min(0).nullable().optional(),
   archived: z.boolean().optional(),
 });
@@ -42,8 +43,15 @@ export const categoryPatchSchema = z.object({
   id: z.string().min(1),
   groupId: z.string().min(1).optional(),
   name: z.string().min(1).max(80).optional(),
+  sortOrder: z.number().int().optional(),
   targetMonthly: z.number().int().min(0).nullable().optional(),
   archived: z.boolean().optional(),
+});
+
+export const categoryReorderSchema = z.object({
+  kind: z.literal("reorder"),
+  groupId: z.string().min(1),
+  orderedCategoryIds: z.array(z.string().min(1)).min(1),
 });
 
 export const assignmentSchema = z.object({
