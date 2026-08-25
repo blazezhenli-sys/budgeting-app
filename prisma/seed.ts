@@ -122,6 +122,7 @@ async function ensureInflowCategory(userId: string, systemGroupId: string) {
       data: {
         specialType: "INFLOW",
         groupId: systemGroupId,
+        sortOrder: 0,
       },
     });
   }
@@ -131,6 +132,7 @@ async function ensureInflowCategory(userId: string, systemGroupId: string) {
       userId,
       groupId: systemGroupId,
       name: INFLOW_CATEGORY_NAME,
+      sortOrder: 0,
       specialType: "INFLOW",
     },
   });
@@ -138,12 +140,12 @@ async function ensureInflowCategory(userId: string, systemGroupId: string) {
 
 async function ensureBaseCategories(userId: string, groupByName: Map<string, { id: string }>) {
   const templates = [
-    { groupName: "Needs", name: "Rent", targetMonthly: 190_000 },
-    { groupName: "Needs", name: "Groceries", targetMonthly: 70_000 },
-    { groupName: "Needs", name: "Utilities", targetMonthly: 25_000 },
-    { groupName: "Wants", name: "Dining Out", targetMonthly: 35_000 },
-    { groupName: "Wants", name: "Entertainment", targetMonthly: 22_000 },
-    { groupName: "Savings", name: "Emergency Fund", targetMonthly: 55_000 },
+    { groupName: "Needs", name: "Rent", targetMonthly: 190_000, sortOrder: 0 },
+    { groupName: "Needs", name: "Groceries", targetMonthly: 70_000, sortOrder: 1 },
+    { groupName: "Needs", name: "Utilities", targetMonthly: 25_000, sortOrder: 2 },
+    { groupName: "Wants", name: "Dining Out", targetMonthly: 35_000, sortOrder: 0 },
+    { groupName: "Wants", name: "Entertainment", targetMonthly: 22_000, sortOrder: 1 },
+    { groupName: "Savings", name: "Emergency Fund", targetMonthly: 55_000, sortOrder: 0 },
   ];
 
   for (const template of templates) {
@@ -157,7 +159,15 @@ async function ensureBaseCategories(userId: string, groupByName: Map<string, { i
           userId,
           groupId: groupByName.get(template.groupName)!.id,
           name: template.name,
+          sortOrder: template.sortOrder,
           targetMonthly: template.targetMonthly,
+        },
+      });
+    } else {
+      await prisma.category.update({
+        where: { id: existing.id },
+        data: {
+          sortOrder: template.sortOrder,
         },
       });
     }

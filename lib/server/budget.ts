@@ -246,7 +246,7 @@ export async function getBudgetMonthView(userId: string, month: MonthKey): Promi
       prisma.category.findMany({
         where: { userId, specialType: null },
         include: { group: true },
-        orderBy: [{ group: { sortOrder: "asc" } }, { name: "asc" }],
+        orderBy: [{ group: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
       }),
       prisma.categoryBudget.findMany({
         where: {

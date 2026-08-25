@@ -1,7 +1,7 @@
 "use client";
 
 import { Category, CategoryGroup } from "@prisma/client";
-import { FormEvent, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useMemo, useState } from "react";
 
 import { parseDisplayAmountToUsdCents, type UsdRateMap, usdCentsToDisplayInput } from "@/lib/money";
 
@@ -11,6 +11,10 @@ type Props = {
   currency: string;
   usdRateMap: UsdRateMap;
 };
+
+function compareCategories(a: Category, b: Category): number {
+  return a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+}
 
 export function CategoriesManager({ initialGroups, initialCategories, currency, usdRateMap }: Props) {
   const initialSystemGroupIds = new Set(
@@ -41,6 +45,10 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
   const [showArchived, setShowArchived] = useState(false);
   const [deleteDraftCategoryId, setDeleteDraftCategoryId] = useState<string | null>(null);
   const [deleteReplacementCategoryId, setDeleteReplacementCategoryId] = useState("");
+  const [draggingCategoryId, setDraggingCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after">("before");
+  const [reorderingGroupId, setReorderingGroupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const systemGroupIds = useMemo(
@@ -60,8 +68,18 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     [groups, systemGroupIds],
   );
   const editableCategories = useMemo(
-    () => categories.filter((category) => !systemGroupIds.has(category.groupId)),
+    () => categories.filter((category) => !systemGroupIds.has(category.groupId)).sort(compareCategories),
     [categories, systemGroupIds],
+  );
+  const categoriesByGroup = useMemo(
+    () =>
+      new Map(
+        editableGroups.map((group) => [
+          group.id,
+          editableCategories.filter((category) => category.groupId === group.id).sort(compareCategories),
+        ]),
+      ),
+    [editableCategories, editableGroups],
   );
   const activeEditableCategories = useMemo(
     () => editableCategories.filter((category) => !category.archived),
@@ -75,13 +93,143 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     () =>
       editableGroups.map((group) => ({
         ...group,
-        categories: visibleEditableCategories.filter((category) => category.groupId === group.id),
+        categories: (categoriesByGroup.get(group.id) ?? []).filter((category) => showArchived || !category.archived),
       })),
-    [editableGroups, visibleEditableCategories],
+    [categoriesByGroup, editableGroups, showArchived],
   );
 
   function setCategoryWorking(categoryId: string, working: boolean) {
     setWorkingCategoryIds((previous) => ({ ...previous, [categoryId]: working }));
+  }
+
+  function clearDragState() {
+    setDraggingCategoryId(null);
+    setDragOverCategoryId(null);
+    setDragOverPosition("before");
+  }
+
+  function applyCategoryOrder(groupIdToReorder: string, orderedCategoryIds: string[]) {
+    const orderById = new Map(orderedCategoryIds.map((categoryId, index) => [categoryId, index]));
+    setCategories((previous) =>
+      previous.map((category) =>
+        category.groupId === groupIdToReorder && orderById.has(category.id)
+          ? { ...category, sortOrder: orderById.get(category.id)! }
+          : category,
+      ),
+    );
+  }
+
+  async function reorderCategories(groupIdToReorder: string, orderedCategoryIds: string[]) {
+    setError(null);
+    const previousCategories = categories;
+    setReorderingGroupId(groupIdToReorder);
+    applyCategoryOrder(groupIdToReorder, orderedCategoryIds);
+
+    const response = await fetch("/api/categories", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "reorder",
+        groupId: groupIdToReorder,
+        orderedCategoryIds,
+      }),
+    });
+    const payload = await response.json();
+    setReorderingGroupId(null);
+
+    if (!response.ok) {
+      setCategories(previousCategories);
+      setError(payload.error ?? "Failed to reorder categories");
+      return;
+    }
+
+    const updatedById = new Map((payload.categories as Category[]).map((category) => [category.id, category]));
+    setCategories((previous) => previous.map((category) => updatedById.get(category.id) ?? category));
+  }
+
+  function buildReorderedCategoryIds(
+    groupIdToReorder: string,
+    sourceCategoryId: string,
+    targetCategoryId: string,
+    position: "before" | "after",
+  ): string[] | null {
+    const groupCategories = categoriesByGroup.get(groupIdToReorder) ?? [];
+    const visibleGroupCategories = groupCategories.filter((category) => showArchived || !category.archived);
+    const sourceCategory = groupCategories.find((category) => category.id === sourceCategoryId);
+    const targetCategory = groupCategories.find((category) => category.id === targetCategoryId);
+
+    if (!sourceCategory || !targetCategory || sourceCategory.groupId !== targetCategory.groupId) {
+      return null;
+    }
+
+    const visibleIds = visibleGroupCategories.map((category) => category.id);
+    if (!visibleIds.includes(sourceCategoryId) || !visibleIds.includes(targetCategoryId)) {
+      return null;
+    }
+
+    const withoutSource = visibleIds.filter((categoryId) => categoryId !== sourceCategoryId);
+    const targetIndex = withoutSource.indexOf(targetCategoryId);
+    if (targetIndex === -1) {
+      return null;
+    }
+
+    const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+    const reorderedVisibleIds = [...withoutSource];
+    reorderedVisibleIds.splice(insertIndex, 0, sourceCategoryId);
+
+    if (showArchived) {
+      return reorderedVisibleIds;
+    }
+
+    const hiddenIds = groupCategories
+      .filter((category) => category.archived && !reorderedVisibleIds.includes(category.id))
+      .map((category) => category.id);
+    return [...reorderedVisibleIds, ...hiddenIds];
+  }
+
+  function handleCategoryDragStart(event: DragEvent<HTMLButtonElement>, categoryId: string) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", categoryId);
+    setDraggingCategoryId(categoryId);
+    setDeleteDraftCategoryId(null);
+    setDeleteReplacementCategoryId("");
+  }
+
+  function handleCategoryDragOver(event: DragEvent<HTMLLIElement>, categoryId: string) {
+    if (!draggingCategoryId || draggingCategoryId === categoryId) {
+      return;
+    }
+
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+
+    if (dragOverCategoryId !== categoryId || dragOverPosition !== position) {
+      setDragOverCategoryId(categoryId);
+      setDragOverPosition(position);
+    }
+  }
+
+  async function handleCategoryDrop(event: DragEvent<HTMLLIElement>, groupIdToReorder: string, categoryId: string) {
+    event.preventDefault();
+    if (!draggingCategoryId || draggingCategoryId === categoryId) {
+      clearDragState();
+      return;
+    }
+
+    const orderedCategoryIds = buildReorderedCategoryIds(
+      groupIdToReorder,
+      draggingCategoryId,
+      categoryId,
+      dragOverPosition,
+    );
+    clearDragState();
+
+    if (!orderedCategoryIds) {
+      return;
+    }
+
+    await reorderCategories(groupIdToReorder, orderedCategoryIds);
   }
 
   async function createGroup(event: FormEvent<HTMLFormElement>) {
@@ -521,10 +669,41 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
               {group.categories.length ? (
                 group.categories.map((category) => {
                   const isWorking = workingCategoryIds[category.id] ?? false;
+                  const isReordering = reorderingGroupId === group.id;
+                  const itemClassName = [
+                    "category-item",
+                    draggingCategoryId === category.id ? "category-item--dragging" : "",
+                    dragOverCategoryId === category.id && dragOverPosition === "before" ? "category-item--drop-before" : "",
+                    dragOverCategoryId === category.id && dragOverPosition === "after" ? "category-item--drop-after" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   const replacementCategories = activeEditableCategories.filter((item) => item.id !== category.id);
                   return (
-                    <li key={category.id} className="category-item">
+                    <li
+                      key={category.id}
+                      className={itemClassName}
+                      onDragOver={(event) => handleCategoryDragOver(event, category.id)}
+                      onDrop={(event) => void handleCategoryDrop(event, group.id, category.id)}
+                    >
                       <div className="category-main">
+                        <div className="inline-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <button
+                            type="button"
+                            className="secondary category-reorder-handle"
+                            draggable={!isWorking && !isReordering}
+                            onDragStart={(event) => handleCategoryDragStart(event, category.id)}
+                            onDragEnd={clearDragState}
+                            aria-label={`Reorder ${category.name}`}
+                            title="Drag to reorder"
+                            disabled={isWorking || isReordering}
+                          >
+                            :::
+                          </button>
+                          <div className="inline-row">
+                            {category.archived ? <span className="category-status-badge">Archived</span> : null}
+                          </div>
+                        </div>
                         <div className="category-detail-grid">
                           <label className="category-detail-label">
                             <span>Name</span>
@@ -557,16 +736,13 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                             />
                           </label>
                         </div>
-                        <div className="inline-row">
-                          {category.archived ? <span className="category-status-badge">Archived</span> : null}
-                        </div>
                       </div>
                       <div className="category-actions">
                         {category.specialType === "INFLOW" ? (
                           <span className="muted">Locked</span>
                         ) : (
                           <>
-                            <button type="button" className="secondary" onClick={() => saveCategory(category)} disabled={isWorking}>
+                            <button type="button" className="secondary" onClick={() => saveCategory(category)} disabled={isWorking || isReordering}>
                               Save
                             </button>
                             <label className="category-move-label">
@@ -578,7 +754,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                                 }}
                                 aria-label={`Move ${category.name} to group`}
                                 className="category-move-select"
-                                disabled={isWorking}
+                                disabled={isWorking || isReordering}
                               >
                                 {editableGroups.map((item) => (
                                   <option key={item.id} value={item.id}>
@@ -593,7 +769,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               onClick={() => {
                                 void toggleCategoryArchived(category);
                               }}
-                              disabled={isWorking}
+                              disabled={isWorking || isReordering}
                             >
                               {category.archived ? "Restore" : "Archive"}
                             </button>
@@ -603,7 +779,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               onClick={() => {
                                 startDeleteCategory(category);
                               }}
-                              disabled={isWorking}
+                              disabled={isWorking || isReordering}
                             >
                               Delete
                             </button>
@@ -621,7 +797,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               <select
                                 value={deleteReplacementCategoryId}
                                 onChange={(event) => setDeleteReplacementCategoryId(event.target.value)}
-                                disabled={isWorking}
+                                disabled={isWorking || isReordering}
                               >
                                 {replacementCategories.map((item) => (
                                   <option key={item.id} value={item.id}>
@@ -641,7 +817,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                               onClick={() => {
                                 void deleteCategory(category.id);
                               }}
-                              disabled={isWorking}
+                              disabled={isWorking || isReordering}
                             >
                               Delete category
                             </button>
@@ -652,7 +828,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
                                 setDeleteDraftCategoryId(null);
                                 setDeleteReplacementCategoryId("");
                               }}
-                              disabled={isWorking}
+                              disabled={isWorking || isReordering}
                             >
                               Cancel
                             </button>

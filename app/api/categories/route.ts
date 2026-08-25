@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { badRequest, requireApiUser } from "@/lib/server/api";
 import { ensureInflowCategory } from "@/lib/server/inflow";
-import { categoryGroupSchema, categoryPatchSchema, categorySchema } from "@/lib/validation/schemas";
+import { categoryGroupSchema, categoryPatchSchema, categoryReorderSchema, categorySchema } from "@/lib/validation/schemas";
 
 async function isSystemGroup(userId: string, groupId: string): Promise<boolean> {
   const systemCategory = await prisma.category.findFirst({
@@ -140,6 +140,20 @@ async function moveCategoryContentAndDelete(
   });
 }
 
+async function nextCategorySortOrder(userId: string, groupId: string): Promise<number> {
+  const maxResult = await prisma.category.aggregate({
+    where: {
+      userId,
+      groupId,
+    },
+    _max: {
+      sortOrder: true,
+    },
+  });
+
+  return (maxResult._max.sortOrder ?? -1) + 1;
+}
+
 export async function GET() {
   const { user, response } = await requireApiUser();
   if (!user) return response!;
@@ -153,7 +167,7 @@ export async function GET() {
     }),
     prisma.category.findMany({
       where: { userId: user.id },
-      orderBy: { name: "asc" },
+      orderBy: [{ group: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
     }),
   ]);
 
@@ -199,12 +213,15 @@ export async function POST(request: Request) {
   if (await isSystemGroup(user.id, payload.data.groupId)) {
     return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
   }
+  const sortOrder =
+    payload.data.sortOrder !== undefined ? payload.data.sortOrder : await nextCategorySortOrder(user.id, payload.data.groupId);
 
   const category = await prisma.category.create({
     data: {
       userId: user.id,
       groupId: payload.data.groupId,
       name: payload.data.name,
+      sortOrder,
       targetMonthly: payload.data.targetMonthly ?? null,
       archived: payload.data.archived ?? false,
     },
@@ -218,6 +235,59 @@ export async function PATCH(request: Request) {
   if (!user) return response!;
 
   const body = await request.json();
+
+  if (body.kind === "reorder") {
+    const payload = categoryReorderSchema.safeParse(body);
+    if (!payload.success) {
+      return badRequest("Invalid category reorder payload");
+    }
+
+    const group = await prisma.categoryGroup.findFirst({
+      where: { id: payload.data.groupId, userId: user.id },
+      select: { id: true },
+    });
+    if (!group) {
+      return NextResponse.json({ error: "Group not found" }, { status: 404 });
+    }
+    if (await isSystemGroup(user.id, payload.data.groupId)) {
+      return NextResponse.json({ error: "System group is read-only." }, { status: 409 });
+    }
+
+    const categories = await prisma.category.findMany({
+      where: {
+        userId: user.id,
+        groupId: payload.data.groupId,
+        specialType: null,
+      },
+      select: { id: true },
+    });
+    const allowedIds = new Set(categories.map((category) => category.id));
+    if (categories.length !== payload.data.orderedCategoryIds.length) {
+      return badRequest("Category reorder payload does not match the group's categories");
+    }
+    if (payload.data.orderedCategoryIds.some((id) => !allowedIds.has(id)) || allowedIds.size !== payload.data.orderedCategoryIds.length) {
+      return badRequest("Category reorder payload contains invalid or duplicate categories");
+    }
+
+    await prisma.$transaction(
+      payload.data.orderedCategoryIds.map((categoryId, index) =>
+        prisma.category.update({
+          where: { id: categoryId },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+
+    const orderedCategories = await prisma.category.findMany({
+      where: {
+        userId: user.id,
+        groupId: payload.data.groupId,
+      },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
+    return NextResponse.json({ categories: orderedCategories, groupId: payload.data.groupId });
+  }
 
   if (body.kind === "group") {
     const payload = categoryGroupSchema.extend({ id: categoryPatchSchema.shape.id }).safeParse(body);
@@ -281,11 +351,20 @@ export async function PATCH(request: Request) {
     }
   }
 
+  const nextGroupId = payload.data.groupId ?? existingCategory.groupId;
+  const sortOrder =
+    payload.data.sortOrder !== undefined
+      ? payload.data.sortOrder
+      : payload.data.groupId !== undefined && payload.data.groupId !== existingCategory.groupId
+        ? await nextCategorySortOrder(user.id, nextGroupId)
+        : undefined;
+
   const category = await prisma.category.update({
     where: { id: payload.data.id },
     data: {
       ...(payload.data.groupId !== undefined ? { groupId: payload.data.groupId } : {}),
       ...(payload.data.name !== undefined ? { name: payload.data.name } : {}),
+      ...(sortOrder !== undefined ? { sortOrder } : {}),
       ...(payload.data.targetMonthly !== undefined ? { targetMonthly: payload.data.targetMonthly } : {}),
       ...(payload.data.archived !== undefined ? { archived: payload.data.archived } : {}),
     },

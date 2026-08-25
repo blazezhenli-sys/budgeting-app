@@ -18,7 +18,10 @@ export default async function TransactionsPage() {
 
   const [accounts, categories, transactions] = await Promise.all([
     prisma.account.findMany({ where: { userId: user.id, archived: false }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ where: { userId: user.id, archived: false }, orderBy: { name: "asc" } }),
+    prisma.category.findMany({
+      where: { userId: user.id, archived: false },
+      orderBy: [{ group: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
+    }),
     prisma.transaction.findMany({
       where: {
         userId: user.id,

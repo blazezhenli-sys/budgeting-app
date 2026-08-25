@@ -285,10 +285,34 @@ th {
   border-radius: 10px;
   padding: 0.55rem 0.65rem;
   background: rgba(34, 49, 44, 0.18);
+  position: relative;
 }
 
 .category-main {
   min-width: 0;
+}
+
+.category-item--dragging {
+  opacity: 0.55;
+}
+
+.category-item--drop-before::before,
+.category-item--drop-after::after {
+  content: "";
+  position: absolute;
+  left: 0.65rem;
+  right: 0.65rem;
+  height: 2px;
+  background: var(--brand);
+  border-radius: 999px;
+}
+
+.category-item--drop-before::before {
+  top: -1px;
+}
+
+.category-item--drop-after::after {
+  bottom: -1px;
 }
 
 .category-detail-grid {
@@ -346,6 +370,18 @@ th {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.category-reorder-handle {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  padding: 0.45rem 0;
+  cursor: grab;
+  letter-spacing: 0.08em;
+}
+
+.category-reorder-handle:active {
+  cursor: grabbing;
 }
 
 .category-delete-panel {
