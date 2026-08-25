@@ -5,6 +5,7 @@ import { monthBounds } from "@/lib/month";
 import { requireSessionUser } from "@/lib/server/auth";
 import { ensureInflowCategory } from "@/lib/server/inflow";
 import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
+import type { MonthKey } from "@/lib/types";
 
 export default async function TransactionsPage() {
   const user = await requireSessionUser();
@@ -12,7 +13,7 @@ export default async function TransactionsPage() {
 
   const settings = await ensureSettings(user.id);
   const initialDate = todayInTimeZone(settings.timezone);
-  const initialMonth = initialDate.slice(0, 7);
+  const initialMonth = initialDate.slice(0, 7) as MonthKey;
   const bounds = monthBounds(initialMonth);
 
   const [accounts, categories, transactions] = await Promise.all([
