@@ -38,6 +38,7 @@ type Props = {
   currency: string;
   usdRateMap: UsdRateMap;
   initialDate: string;
+  initialMonth: string;
 };
 
 export function TransactionsManager({
@@ -48,6 +49,7 @@ export function TransactionsManager({
   currency,
   usdRateMap,
   initialDate,
+  initialMonth,
 }: Props) {
   const initialSpendCategoryId = categories.find((category) => category.specialType !== "INFLOW")?.id ?? "";
   const inflowCategory =
@@ -56,6 +58,7 @@ export function TransactionsManager({
     null;
 
   const [transactions, setTransactions] = useState(initialTransactions);
+  const [month, setMonth] = useState(initialMonth);
   const [type, setType] = useState<"standard" | "transfer">("standard");
   const [direction, setDirection] = useState<"expense" | "income">("expense");
   const [date, setDate] = useState(initialDate);
@@ -78,6 +81,7 @@ export function TransactionsManager({
   const [editMemo, setEditMemo] = useState("");
   const [editAmount, setEditAmount] = useState("0");
   const [error, setError] = useState<string | null>(null);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   const spendCategories = categories.filter((category) => category.specialType !== "INFLOW");
 
@@ -85,6 +89,41 @@ export function TransactionsManager({
     () => [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1)),
     [transactions],
   );
+
+  function transactionCategoryLabel(transaction: TransactionRow): string {
+    if (transaction.transferGroup) {
+      return "Transfer";
+    }
+    if (transaction.splits.length) {
+      return `Split (${transaction.splits.length})`;
+    }
+    if (transaction.category?.name) {
+      return transaction.category.name;
+    }
+    return transaction.amount >= 0 ? inflowCategory?.name ?? "Inflow" : "Uncategorized";
+  }
+
+  async function loadTransactions(nextMonth: string) {
+    setLoadingTransactions(true);
+    setError(null);
+    const response = await fetch(`/api/transactions?month=${nextMonth}`);
+    const payload = await response.json();
+    setLoadingTransactions(false);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Failed to load transactions");
+      return false;
+    }
+
+    setTransactions(payload.transactions as TransactionRow[]);
+    setEditingTransactionId(null);
+    return true;
+  }
+
+  async function changeMonth(nextMonth: string) {
+    setMonth(nextMonth);
+    await loadTransactions(nextMonth);
+  }
 
   async function addTransaction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -157,13 +196,7 @@ export function TransactionsManager({
       return;
     }
 
-    if (payload.transaction) {
-      setTransactions((previous) => [payload.transaction, ...previous]);
-    }
-    if (payload.transactions) {
-      window.location.reload();
-      return;
-    }
+    await loadTransactions(month);
     setPayee("");
     setMemo("");
     setAmount("0");
@@ -179,13 +212,8 @@ export function TransactionsManager({
       return;
     }
 
-    const payload = await response.json();
-    if (payload.transferGroup) {
-      setTransactions((previous) => previous.filter((row) => row.transferGroup !== payload.transferGroup));
-      return;
-    }
-
-    setTransactions((previous) => previous.filter((row) => row.id !== id));
+    await response.json();
+    await loadTransactions(month);
   }
 
   function isEditableTransaction(transaction: TransactionRow): boolean {
@@ -262,32 +290,7 @@ export function TransactionsManager({
       return;
     }
 
-    const nextAccount = accounts.find((account) => account.id === editAccountId);
-    const nextCategory =
-      signedAmount > 0
-        ? categories.find((category) => category.id === inflowCategoryId) ?? null
-        : categories.find((category) => category.id === categoryForRequest) ?? null;
-
-    setTransactions((previous) =>
-      previous.map((row) =>
-        row.id === editingTransactionId
-          ? {
-              ...row,
-              date: new Date(editDate).toISOString(),
-              payee: editPayee,
-              memo: editMemo || null,
-              amount: signedAmount,
-              account: {
-                id: editAccountId,
-                name: nextAccount?.name ?? row.account.name,
-              },
-              categoryId: categoryForRequest ?? null,
-              category: nextCategory ? { id: nextCategory.id, name: nextCategory.name } : null,
-            }
-          : row,
-      ),
-    );
-    setEditingTransactionId(null);
+    await loadTransactions(month);
   }
 
   function addSplitRow() {
@@ -476,6 +479,15 @@ export function TransactionsManager({
 
       <section className="card">
         <h2>Transactions</h2>
+        <div className="inline-row" style={{ marginBottom: "0.75rem" }}>
+          <label>
+            Month
+            <input type="month" value={month} onChange={(event) => void changeMonth(event.target.value)} />
+          </label>
+          <p className="muted" style={{ margin: 0 }}>
+            {loadingTransactions ? "Loading..." : `${sortedTransactions.length} transaction${sortedTransactions.length === 1 ? "" : "s"}`}
+          </p>
+        </div>
         <div className="table-scroll">
           <table>
             <thead>
@@ -538,12 +550,8 @@ export function TransactionsManager({
                           ))}
                         </select>
                       )
-                    ) : transaction.transferGroup ? (
-                      "Transfer"
-                    ) : transaction.splits.length ? (
-                      `Split (${transaction.splits.length})`
                     ) : (
-                      transaction.category?.name ?? "Inflow"
+                      transactionCategoryLabel(transaction)
                     )}
                   </td>
                   <td>
