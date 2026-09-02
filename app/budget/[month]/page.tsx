@@ -2,7 +2,7 @@ import Link from "next/link";
 import { addMonths, format, parse } from "date-fns";
 import { notFound } from "next/navigation";
 
-import { BudgetBoard } from "@/lib/components/budget-board";
+import { BudgetWorkspace } from "@/lib/components/budget-workspace";
 import { prisma } from "@/lib/db";
 import { todayInTimeZone } from "@/lib/date";
 import { isMonthKey } from "@/lib/month";
@@ -36,25 +36,23 @@ export default async function BudgetMonthPage({ params }: { params: Promise<{ mo
   const inflowCategory = categories.find((category) => category.specialType === "INFLOW");
   const initialQuickDate = todayInTimeZone(settings.timezone);
   const usdRateMap = usdRateMapFromSettings(settings);
+  const monthLabel = format(parse(`${month}-01`, "yyyy-MM-dd", new Date()), "MMMM yyyy");
 
   const prev = adjacentMonth(month, -1);
   const next = adjacentMonth(month, 1);
 
   return (
-    <div className="grid">
-      <div className="inline-row" style={{ justifyContent: "space-between" }}>
-        <h1>Budget</h1>
-        <div className="inline-row">
-          <Link href={`/budget/${prev}`} className="button-link secondary">
-            Previous month
-          </Link>
-          <Link href={`/budget/${next}`} className="button-link secondary">
-            Next month
-          </Link>
-        </div>
-      </div>
-      <BudgetBoard
+    <div className="budget-page">
+      <nav className="budget-page__breadcrumb" aria-label="Budget section">
+        <Link href="/budget">Budget</Link>
+        <span>/</span>
+        <span>{monthLabel}</span>
+      </nav>
+      <BudgetWorkspace
         month={month}
+        monthLabel={monthLabel}
+        prevMonthHref={`/budget/${prev}`}
+        nextMonthHref={`/budget/${next}`}
         currency={settings.currency}
         usdRateMap={usdRateMap}
         initialBudget={budget}
