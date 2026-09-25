@@ -36,6 +36,7 @@ export const categorySchema = z.object({
   name: z.string().min(1).max(80),
   sortOrder: z.number().int().optional(),
   targetMonthly: z.number().int().min(0).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
   archived: z.boolean().optional(),
 });
 
@@ -45,6 +46,7 @@ export const categoryPatchSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   sortOrder: z.number().int().optional(),
   targetMonthly: z.number().int().min(0).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
   archived: z.boolean().optional(),
 });
 
@@ -68,6 +70,10 @@ export const budgetCoverOverspendingSchema = z.object({
   month: z.string().regex(monthRegex),
   overspentCategoryId: z.string().min(1),
   sourceCategoryId: z.string().min(1),
+});
+
+export const budgetAutoAssignSchema = z.object({
+  mode: z.enum(["underfunded", "overspent", "overspent_then_underfunded"]).default("underfunded"),
 });
 
 export const transactionSchema = z.object({

@@ -16,6 +16,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const month = url.searchParams.get("month");
+  const accountId = url.searchParams.get("accountId");
   if (month && !isMonthKey(month)) {
     return badRequest("Invalid month query");
   }
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
             },
           }
         : {}),
+      ...(accountId ? { accountId } : {}),
     },
     include: {
       account: true,

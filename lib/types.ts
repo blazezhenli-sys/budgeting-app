@@ -65,6 +65,16 @@ export type TopPayeeRow = {
   share: number;
 };
 
+export type RecurringQueueItem = {
+  ruleId: string;
+  payee: string;
+  amount: number;
+  frequency: RecurringFrequency;
+  nextRunDate: string;
+  account: { id: string; name: string };
+  category: { id: string; name: string } | null;
+};
+
 export type MonthlyReportView = {
   month: MonthKey;
   totals: BudgetMonthView["totals"];

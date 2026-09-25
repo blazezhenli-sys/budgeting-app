@@ -10,13 +10,20 @@ type Props = {
   initialCategories: Category[];
   currency: string;
   usdRateMap: UsdRateMap;
+  onChangeCommitted?: () => void;
 };
 
 function compareCategories(a: Category, b: Category): number {
   return a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 }
 
-export function CategoriesManager({ initialGroups, initialCategories, currency, usdRateMap }: Props) {
+export function CategoriesManager({
+  initialGroups,
+  initialCategories,
+  currency,
+  usdRateMap,
+  onChangeCommitted,
+}: Props) {
   const initialSystemGroupIds = new Set(
     initialCategories
       .filter((category) => category.specialType !== null)
@@ -145,6 +152,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
 
     const updatedById = new Map((payload.categories as Category[]).map((category) => [category.id, category]));
     setCategories((previous) => previous.map((category) => updatedById.get(category.id) ?? category));
+    onChangeCommitted?.();
   }
 
   function buildReorderedCategoryIds(
@@ -257,6 +265,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     if (!groupId) {
       setGroupId(payload.group.id);
     }
+    onChangeCommitted?.();
   }
 
   async function createCategory(event: FormEvent<HTMLFormElement>) {
@@ -303,6 +312,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     }));
     setCategoryName("");
     setCategoryTarget("");
+    onChangeCommitted?.();
   }
 
   async function deleteCategory(categoryId: string) {
@@ -342,6 +352,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
     });
     setDeleteDraftCategoryId(null);
     setDeleteReplacementCategoryId("");
+    onChangeCommitted?.();
   }
 
   async function saveCategory(category: Category) {
@@ -393,6 +404,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
           ? ""
           : usdCentsToDisplayInput(payload.category.targetMonthly, currency, usdRateMap),
     }));
+    onChangeCommitted?.();
   }
 
   async function moveCategory(category: Category, nextGroupId: string) {
@@ -435,6 +447,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       [category.id]: payload.category.name,
     }));
     setCategoryWorking(category.id, false);
+    onChangeCommitted?.();
   }
 
   async function toggleCategoryArchived(category: Category) {
@@ -475,6 +488,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       setDeleteDraftCategoryId(null);
       setDeleteReplacementCategoryId("");
     }
+    onChangeCommitted?.();
   }
 
   function startDeleteCategory(category: Category) {
@@ -503,6 +517,7 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
       }
       return nextGroups;
     });
+    onChangeCommitted?.();
   }
 
   async function moveGroup(groupToMove: CategoryGroup, direction: "up" | "down") {
@@ -564,7 +579,10 @@ export function CategoriesManager({ initialGroups, initialCategories, currency, 
           neighborPayload.error ??
           "Failed to reorder groups",
       );
+      return;
     }
+
+    onChangeCommitted?.();
   }
 
   return (

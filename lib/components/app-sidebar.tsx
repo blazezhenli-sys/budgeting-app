@@ -1,31 +1,26 @@
-"use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
 import { LogoutButton } from "@/lib/components/logout-button";
 
+type SidebarAccount = {
+  id: string;
+  name: string;
+  type: "CASH" | "CHECKING" | "SAVINGS";
+};
+
 const primaryLinks = [
   { href: "/budget", label: "Budget" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/capture", label: "Capture" },
-  { href: "/accounts", label: "Accounts" },
-  { href: "/categories", label: "Categories" },
+  { href: "/reports", label: "Reports" },
+  { href: "/transactions", label: "All Accounts" },
 ];
 
 const secondaryLinks = [
+  { href: "/capture", label: "Capture" },
   { href: "/import", label: "Import" },
-  { href: "/reports", label: "Reports" },
   { href: "/settings", label: "Settings" },
 ];
 
-function isActivePath(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-export function AppSidebar({ email }: { email: string }) {
-  const pathname = usePathname();
-
+export function AppSidebar({ email, accounts }: { email: string; accounts: SidebarAccount[] }) {
   return (
     <aside className="app-sidebar">
       <div className="app-sidebar__brand">
@@ -37,23 +32,27 @@ export function AppSidebar({ email }: { email: string }) {
 
       <nav className="app-sidebar__nav" aria-label="Primary">
         {primaryLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`app-nav-link${isActivePath(pathname, link.href) ? " app-nav-link--active" : ""}`}
-          >
+          <Link key={link.href} href={link.href} className="app-nav-link">
             {link.label}
           </Link>
         ))}
       </nav>
 
+      <div className="app-sidebar__accounts">
+        <div className="app-sidebar__section-label">Accounts</div>
+        <nav className="app-sidebar__account-list" aria-label="Accounts">
+          {accounts.map((account) => (
+            <Link key={account.id} href={`/accounts/${account.id}`} className="app-account-link">
+              <span>{account.name}</span>
+              <span className="app-account-link__meta">{account.type}</span>
+            </Link>
+          ))}
+        </nav>
+      </div>
+
       <nav className="app-sidebar__nav app-sidebar__nav--secondary" aria-label="Secondary">
         {secondaryLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`app-nav-link${isActivePath(pathname, link.href) ? " app-nav-link--active" : ""}`}
-          >
+          <Link key={link.href} href={link.href} className="app-nav-link">
             {link.label}
           </Link>
         ))}

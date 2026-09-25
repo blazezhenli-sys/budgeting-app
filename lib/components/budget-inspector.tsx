@@ -1,11 +1,11 @@
-import type { Account, Category } from "@prisma/client";
-import { FormEvent } from "react";
+import type { Category } from "@prisma/client";
 
 import { formatUsdMoney } from "@/lib/money";
-import type { BudgetCategoryRow } from "@/lib/types";
+import type { BudgetCategoryRow, RecurringQueueItem } from "@/lib/types";
 
 type Props = {
   selectedRow: BudgetCategoryRow | null;
+  selectedCategoryDefinition: Category | null;
   currency: string;
   usdRateMap: import("@/lib/money").UsdRateMap;
   monthStatus: "OPEN" | "CLOSED";
@@ -15,29 +15,17 @@ type Props = {
   onCoverSourceChange: (value: string) => void;
   onFundRowToTarget: (row: BudgetCategoryRow) => void;
   onCoverOverspending: (row: BudgetCategoryRow) => void;
-  quickDirection: "expense" | "income";
-  quickDate: string;
-  quickAccountId: string;
-  quickCategoryId: string;
-  quickPayee: string;
-  quickAmount: string;
-  quickMemo: string;
-  accounts: Account[];
-  spendCategories: Category[];
-  inflowCategoryId: string | null;
-  inflowCategoryName: string;
-  onQuickDirectionChange: (value: "expense" | "income") => void;
-  onQuickDateChange: (value: string) => void;
-  onQuickAccountChange: (value: string) => void;
-  onQuickCategoryChange: (value: string) => void;
-  onQuickPayeeChange: (value: string) => void;
-  onQuickAmountChange: (value: string) => void;
-  onQuickMemoChange: (value: string) => void;
-  onQuickSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  noteDraft: string;
+  savingNote: boolean;
+  onNoteDraftChange: (value: string) => void;
+  onSaveNote: () => void;
+  recurringQueue: RecurringQueueItem[];
+  onGenerateRecurring: () => void;
 };
 
 export function BudgetInspector({
   selectedRow,
+  selectedCategoryDefinition,
   currency,
   usdRateMap,
   monthStatus,
@@ -47,30 +35,16 @@ export function BudgetInspector({
   onCoverSourceChange,
   onFundRowToTarget,
   onCoverOverspending,
-  quickDirection,
-  quickDate,
-  quickAccountId,
-  quickCategoryId,
-  quickPayee,
-  quickAmount,
-  quickMemo,
-  accounts,
-  spendCategories,
-  inflowCategoryId,
-  inflowCategoryName,
-  onQuickDirectionChange,
-  onQuickDateChange,
-  onQuickAccountChange,
-  onQuickCategoryChange,
-  onQuickPayeeChange,
-  onQuickAmountChange,
-  onQuickMemoChange,
-  onQuickSubmit,
+  noteDraft,
+  savingNote,
+  onNoteDraftChange,
+  onSaveNote,
+  recurringQueue,
+  onGenerateRecurring,
 }: Props) {
-  const quickAddDisabled =
-    monthStatus === "CLOSED" ||
-    !accounts.length ||
-    (quickDirection === "expense" ? !spendCategories.length : !inflowCategoryId);
+  const targetGap = selectedRow?.targetMonthly ? Math.max(selectedRow.targetMonthly - selectedRow.assigned, 0) : 0;
+  const overfundedAmount = selectedRow?.targetMonthly ? Math.max(selectedRow.assigned - selectedRow.targetMonthly, 0) : 0;
+  const overspendingAmount = selectedRow ? Math.abs(Math.min(selectedRow.available, 0)) : 0;
 
   return (
     <aside className="budget-inspector">
@@ -108,7 +82,25 @@ export function BudgetInspector({
                   {selectedRow.targetMonthly ? formatUsdMoney(selectedRow.targetMonthly, currency, usdRateMap) : "-"}
                 </strong>
               </div>
+              <div className="budget-inspector__stat">
+                <span className="muted">Needed</span>
+                <strong>{selectedRow.targetMonthly ? formatUsdMoney(targetGap, currency, usdRateMap) : "-"}</strong>
+              </div>
+              <div className="budget-inspector__stat">
+                <span className="muted">Over target</span>
+                <strong>{selectedRow.targetMonthly ? formatUsdMoney(overfundedAmount, currency, usdRateMap) : "-"}</strong>
+              </div>
             </div>
+
+            {selectedRow.overspent ? (
+              <p className="budget-inspector__callout budget-inspector__callout--danger">
+                Overspent by {formatUsdMoney(overspendingAmount, currency, usdRateMap)}.
+              </p>
+            ) : targetGap > 0 ? (
+              <p className="budget-inspector__callout">Needs {formatUsdMoney(targetGap, currency, usdRateMap)} to reach target.</p>
+            ) : selectedRow.targetMonthly ? (
+              <p className="budget-inspector__callout">Target is fully funded for this month.</p>
+            ) : null}
 
             {selectedRow.targetMonthly && selectedRow.targetMonthly > 0 ? (
               <button
@@ -153,6 +145,26 @@ export function BudgetInspector({
             ) : (
               <p className="muted">Select an overspent category to move available funds from another category.</p>
             )}
+
+            <div className="budget-inspector__stack">
+              <label>
+                Category note
+                <textarea
+                  value={noteDraft}
+                  onChange={(event) => onNoteDraftChange(event.target.value)}
+                  rows={5}
+                  placeholder="Add planning context for this category"
+                />
+              </label>
+              <div className="budget-inspector__note-actions">
+                <button type="button" className="secondary" onClick={onSaveNote} disabled={savingNote}>
+                  {savingNote ? "Saving..." : "Save note"}
+                </button>
+                <span className="muted">
+                  {selectedCategoryDefinition?.notes ? "Saved note present" : "No saved note yet"}
+                </span>
+              </div>
+            </div>
           </div>
         ) : (
           <p className="muted">Select a category row to inspect details and run category-specific actions.</p>
@@ -161,70 +173,33 @@ export function BudgetInspector({
 
       <section className="budget-inspector__section">
         <div className="budget-inspector__section-header">
-          <h2>Quick add</h2>
-          <span className="muted">{monthStatus === "CLOSED" ? "Month closed" : "Add activity"}</span>
+          <h2>Scheduled</h2>
+          <span className="muted">{recurringQueue.length ? `${recurringQueue.length} due` : "Up to date"}</span>
         </div>
 
-        {!accounts.length ? <p className="muted">Create an account first to add transactions.</p> : null}
-        {!spendCategories.length && quickDirection === "expense" ? (
-          <p className="muted">Create a spending category before adding expenses.</p>
-        ) : null}
-
-        <form onSubmit={onQuickSubmit} className="budget-inspector__form">
-          <label>
-            Direction
-            <select value={quickDirection} onChange={(event) => onQuickDirectionChange(event.target.value as "expense" | "income")}>
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
-            </select>
-          </label>
-          <label>
-            Date
-            <input type="date" value={quickDate} onChange={(event) => onQuickDateChange(event.target.value)} required />
-          </label>
-          <label>
-            Account
-            <select value={quickAccountId} onChange={(event) => onQuickAccountChange(event.target.value)}>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
+        {recurringQueue.length ? (
+          <div className="budget-inspector__stack">
+            <div className="budget-recurring-list">
+              {recurringQueue.map((item) => (
+                <div key={`${item.ruleId}-${item.nextRunDate}`} className="budget-recurring-list__item">
+                  <div>
+                    <strong>{item.payee}</strong>
+                    <p className="muted">
+                      {item.nextRunDate} · {item.account.name}
+                      {item.category ? ` · ${item.category.name}` : ""}
+                    </p>
+                  </div>
+                  <strong>{formatUsdMoney(item.amount, currency, usdRateMap)}</strong>
+                </div>
               ))}
-            </select>
-          </label>
-          <label>
-            Category
-            {quickDirection === "income" ? (
-              <select value={inflowCategoryId ?? ""} disabled>
-                <option value={inflowCategoryId ?? ""}>{inflowCategoryName}</option>
-              </select>
-            ) : (
-              <select value={quickCategoryId} onChange={(event) => onQuickCategoryChange(event.target.value)}>
-                {spendCategories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
-          <label>
-            Amount ({currency})
-            <input value={quickAmount} onChange={(event) => onQuickAmountChange(event.target.value)} required />
-          </label>
-          <label>
-            Payee
-            <input value={quickPayee} onChange={(event) => onQuickPayeeChange(event.target.value)} required />
-          </label>
-          <label>
-            Memo
-            <input value={quickMemo} onChange={(event) => onQuickMemoChange(event.target.value)} />
-          </label>
-          {quickDirection === "income" ? <p className="muted">Income uses {inflowCategoryName}.</p> : null}
-          <button type="submit" disabled={quickAddDisabled}>
-            Add transaction
-          </button>
-        </form>
+            </div>
+            <button type="button" className="secondary" onClick={onGenerateRecurring} disabled={working}>
+              Generate due
+            </button>
+          </div>
+        ) : (
+          <p className="muted">No scheduled transactions are queued for this month.</p>
+        )}
       </section>
     </aside>
   );

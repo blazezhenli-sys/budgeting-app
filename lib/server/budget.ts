@@ -416,52 +416,82 @@ export async function upsertBudgetAssignments(
 }
 
 export async function quickFundMonthlyTargets(userId: string, month: MonthKey) {
+  return quickAutoAssign(userId, month, "underfunded");
+}
+
+export async function quickAutoAssign(
+  userId: string,
+  month: MonthKey,
+  mode: "underfunded" | "overspent" | "overspent_then_underfunded",
+) {
   const budget = await getBudgetMonthView(userId, month);
   if (budget.status === "CLOSED") {
-    throw new Error("This month is closed. Reopen it before funding targets.");
+    throw new Error("This month is closed. Reopen it before auto-assigning.");
   }
 
   let remaining = budget.totals.availableToAssign;
-  const updates: Array<{ categoryId: string; assigned: number }> = [];
+  const nextAssigned = new Map(budget.categories.map((row) => [row.categoryId, row.assigned]));
+  const updates = new Map<string, number>();
 
-  for (const row of budget.categories) {
-    if (!row.targetMonthly || row.targetMonthly <= 0 || remaining <= 0) {
-      continue;
+  function applyIncrease(categoryId: string, amount: number) {
+    if (amount <= 0 || remaining <= 0) {
+      return;
     }
 
-    const needed = Math.max(row.targetMonthly - row.assigned, 0);
-    if (needed <= 0) {
-      continue;
-    }
-
-    const funded = Math.min(needed, remaining);
-    if (funded <= 0) {
-      continue;
-    }
-
-    updates.push({
-      categoryId: row.categoryId,
-      assigned: row.assigned + funded,
-    });
-    remaining -= funded;
+    const currentAssigned = nextAssigned.get(categoryId) ?? 0;
+    const nextAmount = currentAssigned + amount;
+    nextAssigned.set(categoryId, nextAmount);
+    updates.set(categoryId, nextAmount);
+    remaining -= amount;
   }
 
-  if (!updates.length) {
+  if (mode === "overspent" || mode === "overspent_then_underfunded") {
+    for (const row of budget.categories) {
+      if (!row.overspent || remaining <= 0) {
+        continue;
+      }
+
+      const needed = Math.abs(Math.min(row.available, 0));
+      const funded = Math.min(needed, remaining);
+      applyIncrease(row.categoryId, funded);
+    }
+  }
+
+  if (mode === "underfunded" || mode === "overspent_then_underfunded") {
+    for (const row of budget.categories) {
+      if (!row.targetMonthly || row.targetMonthly <= 0 || remaining <= 0) {
+        continue;
+      }
+
+      const assigned = nextAssigned.get(row.categoryId) ?? row.assigned;
+      const needed = Math.max(row.targetMonthly - assigned, 0);
+      const funded = Math.min(needed, remaining);
+      applyIncrease(row.categoryId, funded);
+    }
+  }
+
+  if (!updates.size) {
     return {
+      mode,
       fundedCount: 0,
       fundedAmount: 0,
       budget,
     };
   }
 
-  const updatedBudget = await upsertBudgetAssignments(userId, month, updates);
-  const fundedAmount = updates.reduce((sum, update) => {
+  const updateRows = [...updates.entries()].map(([categoryId, assigned]) => ({
+    categoryId,
+    assigned,
+  }));
+  const updatedBudget = await upsertBudgetAssignments(userId, month, updateRows);
+  const fundedAmount = updateRows.reduce((sum, update) => {
     const previous = budget.categories.find((row) => row.categoryId === update.categoryId)?.assigned ?? 0;
     return sum + Math.max(update.assigned - previous, 0);
   }, 0);
 
   return {
-    fundedCount: updates.length,
+    mode,
+    fundedCount: updateRows.length,
     fundedAmount,
     budget: updatedBudget,
   };

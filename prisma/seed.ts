@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
-import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
+import { addMonths, endOfMonth, format, startOfMonth, subDays } from "date-fns";
 
 const prisma = new PrismaClient();
 const DISPLAY_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "TWD"] as const;
 const INFLOW_CATEGORY_NAME = "Inflow: Ready to Assign";
 const HISTORY_MEMO_MARKER = "[seed-local-history-v1]";
+const STARTER_TRANSACTION_DEDUPE_PREFIX = "seed-starter-v1:";
 const DEFAULT_USD_TO_DISPLAY_RATE = {
   USD: 1,
   EUR: 0.92,
@@ -17,6 +18,11 @@ const DEFAULT_USD_TO_DISPLAY_RATE = {
   AUD: 1.52,
   TWD: 32.1,
 };
+const ACCOUNT_TEMPLATES = [
+  { name: "Checking", type: "CHECKING" as const, openingBalance: 7_500_00 },
+  { name: "Savings", type: "SAVINGS" as const, openingBalance: 2_500_00 },
+  { name: "Cash Wallet", type: "CASH" as const, openingBalance: 300_00 },
+];
 
 function normalizeDisplayCurrency(currency: string | undefined | null): (typeof DISPLAY_CURRENCIES)[number] {
   const normalized = (currency ?? "").toUpperCase();
@@ -174,17 +180,10 @@ async function ensureBaseCategories(userId: string, groupByName: Map<string, { i
   }
 }
 
-async function ensureHistoryAccounts(userId: string, historyStart: Date) {
-  const createdAt = addMonths(historyStart, -1);
-  const templates = [
-    { name: "Checking", type: "CHECKING" as const, openingBalance: 7_500_00 },
-    { name: "Savings", type: "SAVINGS" as const, openingBalance: 2_500_00 },
-    { name: "Cash Wallet", type: "CASH" as const, openingBalance: 300_00 },
-  ];
-
+async function ensureBaseAccounts(userId: string, createdAt?: Date) {
   const accountByName = new Map<string, { id: string }>();
 
-  for (const template of templates) {
+  for (const template of ACCOUNT_TEMPLATES) {
     const account = await prisma.account.upsert({
       where: {
         userId_name: {
@@ -199,9 +198,8 @@ async function ensureHistoryAccounts(userId: string, historyStart: Date) {
         openingBalance: template.openingBalance,
         createdAt,
       },
-      update: {
-        archived: false,
-      },
+      // Seeding must only create missing demo accounts; existing account settings belong to the user.
+      update: {},
       select: {
         id: true,
       },
@@ -210,6 +208,224 @@ async function ensureHistoryAccounts(userId: string, historyStart: Date) {
   }
 
   return accountByName;
+}
+
+async function ensureHistoryAccounts(userId: string, historyStart: Date) {
+  const createdAt = addMonths(historyStart, -1);
+  return ensureBaseAccounts(userId, createdAt);
+}
+
+async function seedStarterTransactions(userId: string) {
+  const totalTransactions = await prisma.transaction.count({ where: { userId } });
+  const seededTransactions = await prisma.transaction.count({
+    where: {
+      userId,
+      dedupeHash: {
+        startsWith: STARTER_TRANSACTION_DEDUPE_PREFIX,
+      },
+    },
+  });
+
+  if (totalTransactions > 0 && seededTransactions === 0) {
+    console.log("Skipped starter transaction seeding because this user already has non-seed transactions.");
+    return;
+  }
+
+  if (totalTransactions > seededTransactions && seededTransactions > 0) {
+    console.log(
+      "Skipped starter transaction reseeding because this user has additional non-seed transactions mixed in.",
+    );
+    return;
+  }
+
+  if (seededTransactions > 0) {
+    await prisma.transaction.deleteMany({
+      where: {
+        userId,
+        dedupeHash: {
+          startsWith: STARTER_TRANSACTION_DEDUPE_PREFIX,
+        },
+      },
+    });
+  }
+
+  const accounts = await ensureBaseAccounts(userId);
+  const categories = await prisma.category.findMany({
+    where: {
+      userId,
+      specialType: null,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
+  const categoryByName = new Map(categories.map((category) => [category.name, category.id]));
+  const inflowCategory = await prisma.category.findFirst({
+    where: { userId, specialType: "INFLOW" },
+    select: { id: true },
+  });
+  if (!inflowCategory) {
+    throw new Error("Missing inflow category.");
+  }
+
+  const now = new Date();
+  const checkingId = accounts.get("Checking")!.id;
+  const savingsId = accounts.get("Savings")!.id;
+  const cashId = accounts.get("Cash Wallet")!.id;
+  const starterTransferGroup = `${STARTER_TRANSACTION_DEDUPE_PREFIX}transfer-savings`;
+
+  const transactions: Array<{
+    userId: string;
+    accountId: string;
+    categoryId?: string | null;
+    date: Date;
+    payee: string;
+    memo: string;
+    amount: number;
+    status: "CLEARED" | "UNCLEARED";
+    transferGroup?: string | null;
+    dedupeHash: string;
+  }> = [
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: inflowCategory.id,
+      date: subDays(now, 21),
+      payee: "Acme Payroll",
+      memo: "Monthly salary",
+      amount: 530_000,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}salary`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: inflowCategory.id,
+      date: subDays(now, 16),
+      payee: "Freelance Client",
+      memo: "Project payout",
+      amount: 68_000,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}freelance`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Rent"),
+      date: subDays(now, 19),
+      payee: "Landlord Co",
+      memo: "August rent",
+      amount: -186_000,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}rent`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: null,
+      date: subDays(now, 18),
+      payee: "Monthly Savings Transfer",
+      memo: "Transfer to savings",
+      amount: -45_000,
+      status: "CLEARED",
+      transferGroup: starterTransferGroup,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}transfer-out`,
+    },
+    {
+      userId,
+      accountId: savingsId,
+      categoryId: null,
+      date: subDays(now, 18),
+      payee: "Monthly Savings Transfer",
+      memo: "Transfer from checking",
+      amount: 45_000,
+      status: "CLEARED",
+      transferGroup: starterTransferGroup,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}transfer-in`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Groceries"),
+      date: subDays(now, 14),
+      payee: "Fresh Market",
+      memo: "Weekly groceries",
+      amount: -18_600,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}groceries-1`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Utilities"),
+      date: subDays(now, 11),
+      payee: "City Utilities",
+      memo: "Power and water",
+      amount: -21_400,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}utilities`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Dining Out"),
+      date: subDays(now, 8),
+      payee: "Neighborhood Cafe",
+      memo: "Dinner out",
+      amount: -9_800,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}dining`,
+    },
+    {
+      userId,
+      accountId: cashId,
+      categoryId: categoryByName.get("Dining Out"),
+      date: subDays(now, 6),
+      payee: "Street Food",
+      memo: "Lunch cash",
+      amount: -2_400,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}cash-food`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Entertainment"),
+      date: subDays(now, 4),
+      payee: "StreamFlix",
+      memo: "Streaming subscription",
+      amount: -14_900,
+      status: "CLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}entertainment`,
+    },
+    {
+      userId,
+      accountId: checkingId,
+      categoryId: categoryByName.get("Groceries"),
+      date: subDays(now, 2),
+      payee: "Fresh Market",
+      memo: "Top-up groceries",
+      amount: -22_300,
+      status: "UNCLEARED",
+      transferGroup: null,
+      dedupeHash: `${STARTER_TRANSACTION_DEDUPE_PREFIX}groceries-2`,
+    },
+  ];
+
+  await prisma.transaction.createMany({
+    data: transactions,
+  });
+
+  console.log(`Seeded ${transactions.length} starter transactions for user ${userId}.`);
 }
 
 async function seedDummyHistory(userId: string, historyMonths: number, forceSeed: boolean) {
@@ -540,9 +756,12 @@ async function main() {
 
   await ensureInflowCategory(user.id, systemGroup.id);
   await ensureBaseCategories(user.id, groupByName);
+  await ensureBaseAccounts(user.id);
 
   if (withHistory) {
     await seedDummyHistory(user.id, historyMonths, forceHistory);
+  } else {
+    await seedStarterTransactions(user.id);
   }
 
   console.log(

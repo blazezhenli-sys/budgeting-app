@@ -12,8 +12,12 @@ type Props = {
   usdRateMap: UsdRateMap;
   budget: BudgetMonthView;
   working: boolean;
-  onFundAllTargets: () => void;
+  autoAssignMode: "underfunded" | "overspent" | "overspent_then_underfunded";
+  onAutoAssignModeChange: (value: "underfunded" | "overspent" | "overspent_then_underfunded") => void;
+  onAutoAssign: () => void;
   onToggleMonthStatus: () => void;
+  onOpenQuickAdd: () => void;
+  onOpenManageCategories: () => void;
 };
 
 export function BudgetHeader({
@@ -25,8 +29,12 @@ export function BudgetHeader({
   usdRateMap,
   budget,
   working,
-  onFundAllTargets,
+  autoAssignMode,
+  onAutoAssignModeChange,
+  onAutoAssign,
   onToggleMonthStatus,
+  onOpenQuickAdd,
+  onOpenManageCategories,
 }: Props) {
   return (
     <section className="budget-header">
@@ -49,9 +57,28 @@ export function BudgetHeader({
           <Link href={nextMonthHref} className="button-link secondary">
             Next
           </Link>
-          <button type="button" className="secondary" onClick={onFundAllTargets} disabled={working || budget.status === "CLOSED"}>
-            Fund all targets
+          <button type="button" className="secondary" onClick={onOpenQuickAdd} disabled={budget.status === "CLOSED"}>
+            Add transaction
           </button>
+          <button type="button" className="secondary" onClick={onOpenManageCategories}>
+            Manage categories
+          </button>
+          <div className="budget-toolbar__autoassign">
+            <select
+              value={autoAssignMode}
+              onChange={(event) =>
+                onAutoAssignModeChange(event.target.value as "underfunded" | "overspent" | "overspent_then_underfunded")
+              }
+              disabled={working || budget.status === "CLOSED"}
+            >
+              <option value="underfunded">Underfunded</option>
+              <option value="overspent">Overspent</option>
+              <option value="overspent_then_underfunded">Overspent then underfunded</option>
+            </select>
+            <button type="button" className="secondary" onClick={onAutoAssign} disabled={working || budget.status === "CLOSED"}>
+              Auto-assign
+            </button>
+          </div>
           <button type="button" className="secondary" onClick={onToggleMonthStatus} disabled={working}>
             {budget.status === "OPEN" ? "Close month" : "Reopen month"}
           </button>
