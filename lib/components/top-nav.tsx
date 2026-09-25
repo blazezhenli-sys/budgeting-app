@@ -14,7 +14,6 @@ export function TopNav({ email }: { email: string }) {
           <Link href="/transactions">Transactions</Link>
           <Link href="/capture">Capture</Link>
           <Link href="/accounts">Accounts</Link>
-          <Link href="/categories">Categories</Link>
           <Link href="/import">Import</Link>
           <Link href="/reports">Reports</Link>
           <Link href="/settings">Settings</Link>

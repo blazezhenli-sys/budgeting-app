@@ -110,6 +110,7 @@ model Category {
   sortOrder   Int      @default(0)
   specialType CategorySpecialType?
   targetMonthly Int?
+  notes       String?
   archived    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

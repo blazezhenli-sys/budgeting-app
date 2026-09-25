@@ -2,6 +2,7 @@
 
 import type { Account, Category } from "@prisma/client";
 import { FormEvent, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { formatUsdMoney, parseDisplayAmountToUsdCents, type UsdRateMap, usdCentsToDisplayInput } from "@/lib/money";
 
@@ -39,7 +40,13 @@ type Props = {
   usdRateMap: UsdRateMap;
   initialDate: string;
   initialMonth: string;
+  initialAccountFilterId: string | null;
+  fixedAccountId?: string | null;
 };
+
+function initialTransferTargetAccountId(accounts: Account[], sourceAccountId: string): string {
+  return accounts.find((account) => account.id !== sourceAccountId)?.id ?? "";
+}
 
 export function TransactionsManager({
   initialTransactions,
@@ -50,7 +57,11 @@ export function TransactionsManager({
   usdRateMap,
   initialDate,
   initialMonth,
+  initialAccountFilterId,
+  fixedAccountId = null,
 }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
   const initialSpendCategoryId = categories.find((category) => category.specialType !== "INFLOW")?.id ?? "";
   const inflowCategory =
     categories.find((category) => category.id === inflowCategoryId) ??
@@ -59,11 +70,14 @@ export function TransactionsManager({
 
   const [transactions, setTransactions] = useState(initialTransactions);
   const [month, setMonth] = useState(initialMonth);
+  const [accountFilterId, setAccountFilterId] = useState(initialAccountFilterId ?? "");
   const [type, setType] = useState<"standard" | "transfer">("standard");
   const [direction, setDirection] = useState<"expense" | "income">("expense");
   const [date, setDate] = useState(initialDate);
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [targetAccountId, setTargetAccountId] = useState(accounts[1]?.id ?? accounts[0]?.id ?? "");
+  const [accountId, setAccountId] = useState(fixedAccountId ?? initialAccountFilterId ?? accounts[0]?.id ?? "");
+  const [targetAccountId, setTargetAccountId] = useState(
+    initialTransferTargetAccountId(accounts, fixedAccountId ?? initialAccountFilterId ?? accounts[0]?.id ?? ""),
+  );
   const [categoryId, setCategoryId] = useState(initialSpendCategoryId);
   const [payee, setPayee] = useState("");
   const [memo, setMemo] = useState("");
@@ -84,11 +98,28 @@ export function TransactionsManager({
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   const spendCategories = categories.filter((category) => category.specialType !== "INFLOW");
+  const sourceAccountId = fixedAccountId ?? accountId;
+  const availableTransferTargets = accounts.filter((account) => account.id !== sourceAccountId);
+  const activeTargetAccountId = availableTransferTargets.some((account) => account.id === targetAccountId)
+    ? targetAccountId
+    : (availableTransferTargets[0]?.id ?? "");
 
   const sortedTransactions = useMemo(
     () => [...transactions].sort((a, b) => (a.date < b.date ? 1 : -1)),
     [transactions],
   );
+
+  const selectedRegister = accounts.find((account) => account.id === accountFilterId) ?? null;
+  const fixedAccount = accounts.find((account) => account.id === fixedAccountId) ?? null;
+
+  function syncUrl(nextAccountId: string) {
+    const params = new URLSearchParams();
+    if (nextAccountId) {
+      params.set("accountId", nextAccountId);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
 
   function transactionCategoryLabel(transaction: TransactionRow): string {
     if (transaction.transferGroup) {
@@ -103,10 +134,14 @@ export function TransactionsManager({
     return transaction.amount >= 0 ? inflowCategory?.name ?? "Inflow" : "Uncategorized";
   }
 
-  async function loadTransactions(nextMonth: string) {
+  async function loadTransactions(nextMonth: string, nextAccountFilterId: string = accountFilterId) {
     setLoadingTransactions(true);
     setError(null);
-    const response = await fetch(`/api/transactions?month=${nextMonth}`);
+    const params = new URLSearchParams({ month: nextMonth });
+    if (nextAccountFilterId) {
+      params.set("accountId", nextAccountFilterId);
+    }
+    const response = await fetch(`/api/transactions?${params.toString()}`);
     const payload = await response.json();
     setLoadingTransactions(false);
 
@@ -122,7 +157,16 @@ export function TransactionsManager({
 
   async function changeMonth(nextMonth: string) {
     setMonth(nextMonth);
-    await loadTransactions(nextMonth);
+    await loadTransactions(nextMonth, accountFilterId);
+  }
+
+  async function changeAccountFilter(nextAccountFilterId: string) {
+    setAccountFilterId(nextAccountFilterId);
+    if (nextAccountFilterId) {
+      setAccountId(nextAccountFilterId);
+    }
+    syncUrl(nextAccountFilterId);
+    await loadTransactions(month, nextAccountFilterId);
   }
 
   async function addTransaction(event: FormEvent<HTMLFormElement>) {
@@ -139,6 +183,11 @@ export function TransactionsManager({
 
     const signedAmount =
       type === "transfer" ? baseAmount * -1 : direction === "income" ? baseAmount : baseAmount * -1;
+
+    if (type === "transfer" && !activeTargetAccountId) {
+      setError("Create another account before adding a transfer.");
+      return;
+    }
 
     const categoryForRequest =
       type === "transfer" || useSplits ? null : direction === "income" ? inflowCategoryId : categoryId;
@@ -181,7 +230,7 @@ export function TransactionsManager({
         type,
         date,
         accountId,
-        targetAccountId,
+        targetAccountId: activeTargetAccountId,
         categoryId: categoryForRequest,
         payee,
         memo,
@@ -196,7 +245,7 @@ export function TransactionsManager({
       return;
     }
 
-    await loadTransactions(month);
+    await loadTransactions(month, accountFilterId);
     setPayee("");
     setMemo("");
     setAmount("0");
@@ -213,7 +262,7 @@ export function TransactionsManager({
     }
 
     await response.json();
-    await loadTransactions(month);
+    await loadTransactions(month, accountFilterId);
   }
 
   function isEditableTransaction(transaction: TransactionRow): boolean {
@@ -290,7 +339,7 @@ export function TransactionsManager({
       return;
     }
 
-    await loadTransactions(month);
+    await loadTransactions(month, accountFilterId);
   }
 
   function addSplitRow() {
@@ -359,22 +408,29 @@ export function TransactionsManager({
           </div>
 
           <div className="inline-row">
-            <label>
-              Account
-              <select value={accountId} onChange={(event) => setAccountId(event.target.value)} required>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {fixedAccount ? (
+              <div className="register-locked-field">
+                <span className="muted">Account</span>
+                <strong>{fixedAccount.name}</strong>
+              </div>
+            ) : (
+              <label>
+                Account
+                <select value={accountId} onChange={(event) => setAccountId(event.target.value)} required>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             {type === "transfer" ? (
               <label>
                 Target account
-                <select value={targetAccountId} onChange={(event) => setTargetAccountId(event.target.value)} required>
-                  {accounts.map((account) => (
+                <select value={activeTargetAccountId} onChange={(event) => setTargetAccountId(event.target.value)} required>
+                  {availableTransferTargets.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name}
                     </option>
@@ -462,6 +518,9 @@ export function TransactionsManager({
           {type === "standard" && direction === "income" ? (
             <p className="muted">Income uses {inflowCategory?.name ?? "Inflow: Ready to Assign"}.</p>
           ) : null}
+          {type === "transfer" && !availableTransferTargets.length ? (
+            <p className="muted">Create another account before adding transfers from this register.</p>
+          ) : null}
 
           <label>
             Payee
@@ -480,6 +539,19 @@ export function TransactionsManager({
       <section className="card">
         <h2>Transactions</h2>
         <div className="inline-row" style={{ marginBottom: "0.75rem" }}>
+          {!fixedAccountId ? (
+            <label>
+              Register
+              <select value={accountFilterId} onChange={(event) => void changeAccountFilter(event.target.value)}>
+                <option value="">All budget accounts</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label>
             Month
             <input type="month" value={month} onChange={(event) => void changeMonth(event.target.value)} />
@@ -488,13 +560,18 @@ export function TransactionsManager({
             {loadingTransactions ? "Loading..." : `${sortedTransactions.length} transaction${sortedTransactions.length === 1 ? "" : "s"}`}
           </p>
         </div>
+        {selectedRegister ? (
+          <p className="muted" style={{ marginTop: 0 }}>
+            Showing activity for {fixedAccount?.name ?? selectedRegister.name}.
+          </p>
+        ) : null}
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Payee</th>
-                <th>Account</th>
+                {!fixedAccountId ? <th>Account</th> : null}
                 <th>Category</th>
                 <th>Amount</th>
                 <th />
@@ -524,19 +601,21 @@ export function TransactionsManager({
                       transaction.payee
                     )}
                   </td>
-                  <td>
-                    {editingTransactionId === transaction.id ? (
-                      <select value={editAccountId} onChange={(event) => setEditAccountId(event.target.value)}>
-                        {accounts.map((account) => (
-                          <option key={account.id} value={account.id}>
-                            {account.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      transaction.account?.name ?? "-"
-                    )}
-                  </td>
+                  {!fixedAccountId ? (
+                    <td>
+                      {editingTransactionId === transaction.id ? (
+                        <select value={editAccountId} onChange={(event) => setEditAccountId(event.target.value)}>
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        transaction.account?.name ?? "-"
+                      )}
+                    </td>
+                  ) : null}
                   <td>
                     {editingTransactionId === transaction.id ? (
                       editDirection === "income" ? (

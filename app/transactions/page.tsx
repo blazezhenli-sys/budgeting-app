@@ -7,39 +7,55 @@ import { ensureInflowCategory } from "@/lib/server/inflow";
 import { ensureSettings, usdRateMapFromSettings } from "@/lib/server/settings";
 import type { MonthKey } from "@/lib/types";
 
-export default async function TransactionsPage() {
+function readSingleParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ accountId?: string | string[] }>;
+}) {
   const user = await requireSessionUser();
   await ensureInflowCategory(user.id);
+  const query = await searchParams;
 
   const settings = await ensureSettings(user.id);
   const initialDate = todayInTimeZone(settings.timezone);
   const initialMonth = initialDate.slice(0, 7) as MonthKey;
   const bounds = monthBounds(initialMonth);
+  const requestedAccountId = readSingleParam(query.accountId);
 
-  const [accounts, categories, transactions] = await Promise.all([
+  const [accounts, categories] = await Promise.all([
     prisma.account.findMany({ where: { userId: user.id, archived: false }, orderBy: { name: "asc" } }),
     prisma.category.findMany({
       where: { userId: user.id, archived: false },
       orderBy: [{ group: { sortOrder: "asc" } }, { sortOrder: "asc" }, { name: "asc" }],
     }),
-    prisma.transaction.findMany({
-      where: {
-        userId: user.id,
-        date: {
-          gte: bounds.start,
-          lte: bounds.end,
-        },
-      },
-      include: {
-        account: true,
-        category: true,
-        splits: {
-          include: { category: true },
-        },
-      },
-      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    }),
   ]);
+
+  const selectedAccount = requestedAccountId
+    ? accounts.find((account) => account.id === requestedAccountId) ?? null
+    : null;
+
+  const transactions = await prisma.transaction.findMany({
+    where: {
+      userId: user.id,
+      date: {
+        gte: bounds.start,
+        lte: bounds.end,
+      },
+      ...(selectedAccount ? { accountId: selectedAccount.id } : {}),
+    },
+    include: {
+      account: true,
+      category: true,
+      splits: {
+        include: { category: true },
+      },
+    },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+  });
 
   const serializableTransactions = transactions.map((row) => ({
     id: row.id,
@@ -64,7 +80,7 @@ export default async function TransactionsPage() {
 
   return (
     <div className="grid">
-      <h1>Transactions</h1>
+      <h1>{selectedAccount ? `${selectedAccount.name} Register` : "Transactions"}</h1>
       <TransactionsManager
         initialTransactions={serializableTransactions}
         accounts={accounts}
@@ -74,6 +90,7 @@ export default async function TransactionsPage() {
         usdRateMap={usdRateMap}
         initialDate={initialDate}
         initialMonth={initialMonth}
+        initialAccountFilterId={selectedAccount?.id ?? null}
       />
     </div>
   );

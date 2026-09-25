@@ -223,6 +223,7 @@ export async function POST(request: Request) {
       name: payload.data.name,
       sortOrder,
       targetMonthly: payload.data.targetMonthly ?? null,
+      notes: payload.data.notes ?? null,
       archived: payload.data.archived ?? false,
     },
   });
@@ -366,6 +367,7 @@ export async function PATCH(request: Request) {
       ...(payload.data.name !== undefined ? { name: payload.data.name } : {}),
       ...(sortOrder !== undefined ? { sortOrder } : {}),
       ...(payload.data.targetMonthly !== undefined ? { targetMonthly: payload.data.targetMonthly } : {}),
+      ...(payload.data.notes !== undefined ? { notes: payload.data.notes } : {}),
       ...(payload.data.archived !== undefined ? { archived: payload.data.archived } : {}),
     },
   });

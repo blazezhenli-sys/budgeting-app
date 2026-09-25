@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Source_Code_Pro } from "next/font/google";
 
-import { TopNav } from "@/lib/components/top-nav";
+import { AppSidebar } from "@/lib/components/app-sidebar";
+import { prisma } from "@/lib/db";
 import { getSessionUser } from "@/lib/server/auth";
 
 import "./globals.css";
@@ -27,12 +28,25 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const user = await getSessionUser();
+  const accounts = user
+    ? await prisma.account.findMany({
+        where: { userId: user.id, archived: false },
+        select: { id: true, name: true, type: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
 
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body>
-        {user ? <TopNav email={user.email} /> : null}
-        <main className="page-shell">{children}</main>
+      <body suppressHydrationWarning>
+        {user ? (
+          <div className="app-shell">
+            <AppSidebar email={user.email} accounts={accounts} />
+            <main className="app-content">{children}</main>
+          </div>
+        ) : (
+          <main className="page-shell page-shell--public">{children}</main>
+        )}
       </body>
     </html>
   );
