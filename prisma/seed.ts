@@ -700,10 +700,6 @@ async function main() {
     throw new Error("APP_USER_EMAIL_2 must be different from APP_USER_EMAIL.");
   }
 
-  const withHistory = readFlag("--history") || process.env.APP_SEED_DEMO_HISTORY === "1";
-  const forceHistory = readFlag("--force-history") || process.env.APP_SEED_FORCE_HISTORY === "1";
-  const historyMonths = readHistoryMonths();
-
   const secondaryPasswordHash = secondaryPassword ? await hashPassword(secondaryPassword) : null;
 
   const user = await prisma.user.upsert({
@@ -758,17 +754,7 @@ async function main() {
   await ensureBaseCategories(user.id, groupByName);
   await ensureBaseAccounts(user.id);
 
-  if (withHistory) {
-    await seedDummyHistory(user.id, historyMonths, forceHistory);
-  } else {
-    await seedStarterTransactions(user.id);
-  }
-
-  console.log(
-    withHistory
-      ? `Seed complete for ${email} with ${historyMonths} months of local dummy budgeting history.`
-      : `Seed complete for ${email}`,
-  );
+  console.log(`Seed complete for ${email}`);
 }
 
 main()

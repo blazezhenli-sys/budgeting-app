@@ -72,22 +72,11 @@ npm run db:generate
 npm run db:push
 # Optional baseline categories + user setup
 npm run db:seed
-# Optional: generate 3-6 months of local dummy budgeting history (default 6)
-npm run db:seed:history
-# Optional: choose month count
-APP_SEED_HISTORY_MONTHS=4 npm run db:seed:history
 npm run dev
 ```
 
 Log in with `APP_USER_EMAIL` / `APP_USER_PASSWORD`.
 Optional: set `APP_USER_EMAIL_2` / `APP_USER_PASSWORD_2` for a second login to the same account.
-
-`db:seed:history` is safe to rerun for already seeded demo data and will replace previously generated seed-history transactions.
-If this user already has non-seed transactions, the command skips by default to avoid mixing data. Use:
-
-```bash
-npm run db:seed:history:force
-```
 
 ## CSV import template
 Required CSV columns:
