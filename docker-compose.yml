@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - tehran_budget_db_data:/var/lib/postgresql/data
+      - tehran_budget_db_data_fresh:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d budgeting_app"]
       interval: 10s
@@ -58,5 +58,5 @@ services:
     command: sh -c "rm -rf .next && npm install && npm run db:push && npm run dev -- --hostname 0.0.0.0 --port 3000"
 
 volumes:
-  tehran_budget_db_data:
+  tehran_budget_db_data_fresh:
   tehran_budget_node_modules:
